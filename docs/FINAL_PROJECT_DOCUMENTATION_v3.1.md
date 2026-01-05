@@ -1,15 +1,15 @@
-# 📚 ПОЛНАЯ ПРОЕКТНАЯ ДОКУМЕНТАЦИЯ v3.0
+# 📚 ПОЛНАЯ ПРОЕКТНАЯ ДОКУМЕНТАЦИЯ v3.1
 
 **Проект:** CargoTech Driver WebApp (Telegram WebApp для водителей)  
-**Дата:** 3 января 2026  
-**Версия:** 3.0 Final (с новым эндпоинтом логина)  
+**Дата:** 4 января 2026  
+**Версия:** 3.1 Final (v3.0 + M5: Subscription & Payment)  
 **Статус:** ✅ **ГОТОВО К РАЗРАБОТКЕ И PRODUCTION**
 
 ---
 
 # ЧАСТЬ 1: АРХИТЕКТУРА И ТРЕБОВАНИЯ
 
-## 📊 PCAM АНАЛИЗ (5 процессов × 5 каналов)
+## 📊 PCAM АНАЛИЗ (6 процессов × 6 каналов)
 
 ### Процессы:
 
@@ -47,6 +47,14 @@ P5: MANAGE_API_CREDENTIALS (NEW!)
     ├─ Store token securely (encrypted in DB)
     ├─ Auto-refresh before expiry
     └─ Use token for all API requests
+
+P6: MANAGE_SUBSCRIPTION & PAYMENTS (M5)
+    ├─ Check subscription status (active/expired/trial)
+    ├─ Create payment in ЮKassa → confirmation_url
+    ├─ User completes payment on ЮKassa
+    ├─ Receive ЮKassa webhook (payment.succeeded)
+    ├─ Activate/extend subscription
+    └─ Grant access to paid features
 ```
 
 ### Каналы (Channels):
@@ -60,19 +68,26 @@ C2: CARGOTECH_API_SERVER
     ├─ access_token (response)
     └─ POST /v1/auth/login
 
-C3: WEBHOOK_RECEIVER
+C3: TELEGRAM_BOT_WEBHOOK
     └─ Status updates from Telegram Bot
 
-C4: REDIS_CACHE
+C4: YOOKASSA_PAYMENT_GATEWAY
+    ├─ Create payment (REST API)
+    └─ Webhooks: payment.succeeded / payment.canceled
+
+C5: REDIS_CACHE
     ├─ Per-user cargo lists
     ├─ Cargo details
     └─ Session data
 
-C5: DATABASE
+C6: DATABASE
     ├─ Driver profiles
     ├─ API credentials
     ├─ Responses history
-    └─ Encrypted tokens
+    ├─ Payments + subscriptions
+    ├─ Promo codes
+    ├─ Encrypted tokens / secret keys
+    └─ Audit log
 ```
 
 ---
@@ -111,12 +126,20 @@ PROJECT
 │   └── M4.2: Status updates
 │       └─ Contract 4.2: TelegramBotService.send_status()
 │
-└── M5: INFRASTRUCTURE & DEPLOYMENT
-    ├── M5.1: Django setup
-    ├── M5.2: Redis cache
-    ├── M5.3: Database migrations
-    └── M5.4: Monitoring & logging
+└── M5: SUBSCRIPTION & PAYMENT MANAGEMENT
+    ├── M5.1: Payment Processing (ЮKassa)
+    │   ├─ Contract 5.1: PaymentService.create_payment()
+    │   └─ Contract 5.2: PaymentService.process_webhook()
+    ├── M5.2: Subscription Management
+    │   └─ Contract 5.3: SubscriptionService.activate_from_payment()
+    ├── M5.3: Promo Code System
+    │   └─ Contract 5.4: PromoCodeService.create_promo_code()
+    ├── M5.4: Admin Panel
+    ├── M5.5: Feature Flags
+    └── M5.6: Audit Logging
 ```
+
+**Infrastructure & Deployment (кросс‑секционно, вне PBS модулей M1‑M5):** `DEPLOY_GUIDE_v3.1.md`
 
 ---
 
@@ -168,6 +191,39 @@ FR-6: Telegram Bot (отклики)
   ✅ Bot forwards to shipper
   ✅ Update status in WebApp
   Contract: 4.1, 4.2
+
+FR-7: Подписка (paywall + создание платежа)
+  ✅ Check subscription status before granting access
+  ✅ Create payment in ЮKassa and return confirmation_url
+  ✅ Redirect user to payment page
+  Contract: 5.1
+
+FR-8: Обработка webhook ЮKassa
+  ✅ Receive payment webhooks (payment.succeeded / payment.canceled)
+  ✅ Validate webhook structure + signature
+  ✅ Update payment status idempotently
+  Contract: 5.2
+
+FR-9: Активация/продление подписки после оплаты
+  ✅ Activate subscription on successful payment
+  ✅ Extend existing subscription (renewal)
+  ✅ Generate access_token for subscription access
+  Contract: 5.3
+
+FR-10: Промокоды
+  ✅ Create promo codes (admin)
+  ✅ Apply promo codes and extend subscription
+  Contract: 5.4
+
+FR-11: Управление доступом (feature flags)
+  ✅ Enable/disable paid features without deploy
+  ✅ Block access if subscription expired
+  Module: M5.5 (Feature Flags)
+
+FR-12: Аудит и журналирование (платежи/доступ)
+  ✅ Audit log for payments, webhooks, admin actions
+  ✅ Traceability for incidents and disputes
+  Module: M5.6 (Audit Logging)
 ```
 
 ---
@@ -207,6 +263,9 @@ SECURITY:
   
   NFR-3.4: CORS protection (restrict to app.cargotech.pro)
   NFR-3.5: Rate limiting (10 req/sec per user)
+  
+  NFR-3.6: Validate payment webhooks (ЮKassa signature + idempotency) ← NEW!
+    └─ Solution: signature validation + idempotent processing
 
 RELIABILITY:
   NFR-4.1: Uptime 99.9% (SLA)
@@ -1265,7 +1324,9 @@ cargotech_driver_app/
 
 # ЧАСТЬ 8: ПЛАН РАЗРАБОТКИ (обновлено)
 
-## 📅 Development Plan (14 дней)
+## 📅 Development Plan (24 дня)
+
+**Сводка:** 14 дней базового функционала (M1–M4) + 10 дней на M5 (подписки/платежи) = 24 дня.
 
 ### ДЕНЬ 1-2: M1 Authentication + NEW Login
 
@@ -1404,6 +1465,109 @@ Metrics:
 - ✅ Documentation complete
 ```
 
+### ДЕНЬ 15-16: M5 Foundations (модели + контроль доступа)
+
+```
+✅ Models: Payment, Subscription, PromoCode, SystemSetting
+✅ CheckSubscriptionMiddleware / access checks
+✅ Feature flags базовая модель/таблица
+✅ AuditLog базовая модель/таблица
+✅ UI: paywall / subscription status screen (минимум)
+
+Metrics:
+- ✅ Paywall flow skeleton готов
+- ✅ Доступ блокируется при отсутствии подписки
+- ✅ Модели покрыты миграциями
+```
+
+### ДЕНЬ 17-18: M5.1 Payments (ЮKassa) — создание платежа
+
+```
+✅ Contract 5.1: PaymentService.create_payment()
+✅ YuKassaClient: create_payment()
+✅ Payment status lifecycle (pending/succeeded/canceled/failed)
+✅ Idempotency key strategy
+✅ Unit tests for create_payment()
+
+Metrics:
+- ✅ Payment создаётся и возвращает confirmation_url
+- ✅ Ошибки ЮKassa не ломают UX (повторяемость)
+```
+
+### ДЕНЬ 19: M5.1 Webhooks — обработка статусов платежей
+
+```
+✅ Contract 5.2: PaymentService.process_webhook()
+✅ Webhook endpoint (POST) + валидация структуры
+✅ Signature validation + idempotent processing
+✅ Обновление статусов платежа
+
+Metrics:
+- ✅ Webhook обрабатывается ровно 1 раз
+- ✅ Неверная подпись → отказ без побочных эффектов
+```
+
+### ДЕНЬ 20: M5.2 Subscriptions — активация после оплаты
+
+```
+✅ Contract 5.3: SubscriptionService.activate_from_payment()
+✅ Активация/продление подписки по succeeded payment
+✅ Генерация subscription access_token
+✅ Unit tests для activation/renewal
+
+Metrics:
+- ✅ Подписка активируется автоматически после оплаты
+- ✅ Продление корректно суммирует сроки
+```
+
+### ДЕНЬ 21: M5.3 Promo Codes
+
+```
+✅ Contract 5.4: PromoCodeService.create_promo_code()
+✅ Применение промокода и продление подписки
+✅ Ограничения: max_uses, expires_at, disabled
+✅ Тесты на сценарии применения/ошибок
+
+Metrics:
+- ✅ Промокоды работают и логируются
+```
+
+### ДЕНЬ 22: M5.4 Admin Panel + M5.5 Feature Flags
+
+```
+✅ Admin UI: платежи/подписки/промокоды/настройки
+✅ Управление токенами ЮKassa через SystemSetting
+✅ Feature flags: включение/выключение платных функций
+
+Metrics:
+- ✅ Админ может управлять платежами без деплоя
+- ✅ Flags влияют на доступ в рантайме
+```
+
+### ДЕНЬ 23: M5.6 Audit Logging + Security Review
+
+```
+✅ Audit events: payment, webhook, admin actions, access checks
+✅ Сквозные корреляционные ID для расследований
+✅ Security review: ключи, доступ, webhook validation
+
+Metrics:
+- ✅ Трассируемость инцидентов обеспечена
+- ✅ Секреты не попадают в логи
+```
+
+### ДЕНЬ 24: Интеграция M5 + Staging
+
+```
+✅ E2E: paywall → payment → webhook → subscription → access
+✅ Smoke tests после деплоя
+✅ Финальная актуализация документации v3.1
+
+Metrics:
+- ✅ M5 готов к релизу вместе с базовым функционалом
+- ✅ Документация синхронизирована (4 января 2026)
+```
+
 ---
 
 # ЧАСТЬ 9: БЫСТРЫЙ СТАРТ
@@ -1426,6 +1590,7 @@ cp .env.example .env
 # CARGOTECH_PHONE=+7 911 111 11 11
 # CARGOTECH_PASSWORD=123-123
 # ENCRYPTION_KEY=<generate with Fernet>
+# CARGOTECH_TOKEN_CACHE_TTL=3300
 
 # Run migrations
 python manage.py migrate
@@ -1521,13 +1686,13 @@ coverage report
 
 ```
 ┌─────────────────────────────────────────────────┐
-│  ПРОЕКТНАЯ ДОКУМЕНТАЦИЯ v3.0                    │
-│  (с новым эндпоинтом server-side логина)       │
+│  ПРОЕКТНАЯ ДОКУМЕНТАЦИЯ v3.1                    │
+│  (v3.0 + M5: Subscriptions & Payments)         │
 │                                                 │
 │  ✅ 6 исходных проблем РЕШЕНЫ                   │
-│  ✅ 1 НОВАЯ архитектурная компонента ДОБАВЛЕНА │
-│  ✅ 9 контрактов (было 8, добавлен 1.4)        │
-│  ✅ 14-дневный план разработки                  │
+│  ✅ M5 (подписки/платежи) ИНТЕГРИРОВАН          │
+│  ✅ 15 контрактов (1.1–5.4)                     │
+│  ✅ 24-дневный план разработки                  │
 │  ✅ Полная документация API                     │
 │  ✅ Чек-листы и процедуры                       │
 │  ✅ Примеры кода (copy-paste ready)             │
@@ -1538,8 +1703,8 @@ coverage report
 
 ---
 
-**Дата:** 3 января 2026  
-**Версия:** 3.0 Final (Complete with Server-Side Login)  
+**Дата:** 4 января 2026  
+**Версия:** 3.1 Final (Complete with M5 Subscription & Payment)  
 **Статус:** ✅ ОДОБРЕНО ДЛЯ РАЗРАБОТКИ
 
 **Все файлы готовы! Начните разработку! 💪**

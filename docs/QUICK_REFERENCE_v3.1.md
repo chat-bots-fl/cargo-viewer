@@ -1,12 +1,12 @@
-# 🎯 КРАТКИЙ СПРАВОЧНИК v3.0
+# 🎯 КРАТКИЙ СПРАВОЧНИК v3.1
 
-**Дата:** 3 января 2026  
-**Версия:** 3.0 (с server-side логином)  
+**Дата:** 4 января 2026  
+**Версия:** 3.1 (server-side login + M5 подписки/платежи)  
 **Размер:** 2 страницы (quick reference)
 
 ---
 
-## 🆕 ЧТО ДОБАВЛЕНО В v3.0
+## 🆕 ЧТО ДОБАВЛЕНО В v3.1
 
 ### 1. **Server-Side API Login** ✨
 
@@ -49,7 +49,26 @@ Use token for all requests
 Before expiry → auto-refresh
 ```
 
-### 3. **Новые модели**
+### 3. **M5: Подписки и платежи (ЮKassa)** ⭐
+
+```
+Добавлено:
+├─ Paywall + проверка подписки перед доступом
+├─ ЮKassa платежи + webhook обработка
+├─ Подписки (активация/продление) + access_token
+├─ Промокоды
+└─ Admin Panel + Feature Flags + Audit Logging
+
+Новые контракты:
+Contract 5.1: PaymentService.create_payment()
+Contract 5.2: PaymentService.process_webhook()
+Contract 5.3: SubscriptionService.activate_from_payment()
+Contract 5.4: PromoCodeService.create_promo_code()
+
+Документы: M5_SUBSCRIPTION_PAYMENT_SUMMARY.md / M5_SUBSCRIPTION_PAYMENT_FULL.md
+```
+
+### 4. **Новые модели**
 
 ```python
 # apps/integrations/models.py
@@ -62,7 +81,7 @@ class APIToken(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 ```
 
-### 4. **Новые env переменные**
+### 5. **Новые env переменные**
 
 ```bash
 .env:
@@ -73,7 +92,7 @@ class APIToken(models.Model):
 └─ Остальные как было...
 ```
 
-### 5. **Новые зависимости**
+### 6. **Новые зависимости**
 
 ```
 cryptography>=41.0.0  # For token encryption
@@ -82,7 +101,7 @@ django-redis>=5.4.0   # For token caching
 
 ---
 
-## 📋 ВСЕ 9 КОНТРАКТОВ
+## 📋 ВСЕ 15 КОНТРАКТОВ
 
 ```
 M1: AUTHENTICATION & SESSION (4 контракта)
@@ -104,14 +123,20 @@ M4: TELEGRAM BOT (2 контракта)
 ├─ 4.1: TelegramBotService.handle_response()
 └─ 4.2: TelegramBotService.send_status()
 
-ВСЕГО: 9 контрактов (было 8)
+M5: SUBSCRIPTIONS & PAYMENTS (4 контракта)
+├─ 5.1: PaymentService.create_payment()
+├─ 5.2: PaymentService.process_webhook()
+├─ 5.3: SubscriptionService.activate_from_payment()
+└─ 5.4: PromoCodeService.create_promo_code()
+
+ВСЕГО: 15 контрактов (1.1–5.4)
 ```
 
 ---
 
-## 🔑 Key Changes в v3.0
+## 🔑 Key Changes в v3.1
 
-### ДО v3.0:
+### ДО v3.1:
 
 ```
 Frontend (Driver):
@@ -126,10 +151,10 @@ Backend (Server):
 ├─ Cache results ✓
 └─ Handle responses ✓
 
-PROBLEM: Как сервер логинится на CargoTech API?
+PROBLEM: Как сервер логинится на CargoTech API + как ограничить доступ подпиской?
 ```
 
-### ПОСЛЕ v3.0:
+### ПОСЛЕ v3.1:
 
 ```
 Frontend (Driver):
@@ -146,6 +171,7 @@ Backend (Server):
 └─ Handle responses ✓
 
 SOLUTION: Contract 1.4 + encrypted token storage
+PLUS: M5 paywall + payments + subscriptions
 ```
 
 ---
@@ -162,7 +188,7 @@ SOLUTION: Contract 1.4 + encrypted token storage
 5. [PROBLEM: How to access CargoTech API?]
 ```
 
-### НОВЫЙ FLOW (v3.0):
+### НОВЫЙ FLOW (v3.1):
 
 ```
 1. Server startup (once per deployment)
@@ -219,7 +245,7 @@ python manage.py migrate integrations
 
 ## 🔐 Security Improvements
 
-### Что защищено в v3.0:
+### Что защищено в v3.1:
 
 ```
 ✅ API credentials (phone + password)
@@ -235,6 +261,13 @@ python manage.py migrate integrations
    └─ Automatic before expiry
    └─ Old token immediately invalidated
    └─ Audit log all refresh events
+
+✅ ЮKassa secret keys
+   └─ Storage: Encrypted in database (SystemSetting)
+   └─ Access: Admin-only settings UI
+
+✅ ЮKassa webhooks
+   └─ Signature validation + idempotency
 
 ✅ Driver data
    └─ Session token via Telegram validation
@@ -368,6 +401,6 @@ celery -A config beat --loglevel=info
 
 ---
 
-**Версия:** 3.0 Final  
+**Версия:** 3.1 Final  
 **Статус:** ✅ ГОТОВО К РАЗРАБОТКЕ  
-**Дополнительно:** Полная документация в FINAL_PROJECT_DOCUMENTATION_v3.0.md
+**Дополнительно:** Полная документация в `FINAL_PROJECT_DOCUMENTATION_v3.1.md` (в составе v3.1)
