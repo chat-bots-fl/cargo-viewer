@@ -52,17 +52,17 @@ DEPRECATED (v2.0/v2.1 — только для истории):
 
 РЕШЕНИЕ:
 - Сервер логинится один раз при старте
-- Получает access_token от CargoTech
-- Сохраняет token зашифрованным в БД
-- Кэширует token (55 минут)
-- Автоматически обновляет перед истечением
+- Получает Bearer token от CargoTech (`POST /v1/auth/login` → `{data:{token}}`)
+- Кэширует token в Redis (TTL configurable, default 24h)
+- При `401` → invalidate cache → re-login → retry once
 - Все запросы водителей используют этот token
 - Водители НЕ имеют своих credentials
+- ✅ Verified: Bearer Token работает
 
 SECURITY:
 ✅ phone + password только в .env (никогда в коде)
-✅ Token зашифрован (Fernet encryption)
-✅ Auto-refresh перед истечением
+✅ Token never logged / never stored in DB
+✅ No refresh_token/expires_in in response
 ✅ Audit logging всех операций
 ✅ Alert DevOps если login fail
 ```
@@ -93,19 +93,18 @@ SECURITY:
 
 ```
 models.py:
-- APIToken (для хранения encrypted tokens)
+- (не требуется) CargoTech token хранится в cache
 
 services.py:
 - CargoTechAuthService.login()
-- CargoTechAuthService.refresh_token()
-- CargoTechAuthService.get_valid_token()
-- TokenMonitor (мониторинг токенов)
+- CargoTechAuthService.get_token()
+- CargoTechAuthService.invalidate_cached_token()
+- CargoTechAuthMonitor (optional)
 
 .env (CargoTech):
 - CARGOTECH_PHONE
 - CARGOTECH_PASSWORD
-- ENCRYPTION_KEY
-- CARGOTECH_TOKEN_CACHE_TTL
+- CARGOTECH_TOKEN_CACHE_TTL (optional)
 ```
 
 ### 4. **Обновленная архитектура (P5 + P6)**
@@ -126,8 +125,8 @@ P3: View Cargo Detail (как было)
 P4: Respond to Cargo (как было)
 P5: MANAGE API CREDENTIALS ← НОВОЕ!
     ├─ Server-side login
-    ├─ Token storage + encryption
-    ├─ Auto-refresh
+    ├─ Token cache (Redis)
+    ├─ Re-login on 401
     └─ Use for all API calls
 P6: MANAGE SUBSCRIPTION & PAYMENTS ← НОВОЕ!
     ├─ Paywall / subscription check
@@ -141,13 +140,8 @@ P6: MANAGE SUBSCRIPTION & PAYMENTS ← НОВОЕ!
 ```
 НОВЫЕ ТАБЛИЦЫ (минимум):
 
-CargoTech tokens:
-- integrations_apitoken
-- access_token (encrypted)
-- refresh_token (encrypted)
-- driver_id
-- expires_at
-- created_at
+CargoTech auth:
+- (без новых таблиц; token хранится в cache)
 
 M5 (payments/subscriptions):
 - payments_* (Payment, PaymentHistory)
@@ -157,7 +151,6 @@ M5 (payments/subscriptions):
 - audit_* (AuditLog)
 
 MIGRATION:
-python manage.py migrate integrations
 python manage.py migrate payments subscriptions promocodes
 ```
 
@@ -165,7 +158,7 @@ python manage.py migrate payments subscriptions promocodes
 
 ## ✅ ЧТО РЕШЕНО ВСЕГО
 
-### ПРОБЛЕМА #1: extranote отсутствует
+### ПРОБЛЕМА #1: comment `data.extra.note` не отображается
 ✅ РЕШЕНО: FR-4 + Contract 2.1 обновлены
 
 ### ПРОБЛЕМА #2: weight_volume неясен
@@ -195,7 +188,7 @@ python manage.py migrate payments subscriptions promocodes
 ```
 ТРЕБОВАНИЯ:
 ✅ FR: 12 (M1–M5) — определены
-✅ NFR: определены (performance/usability/security/reliability)
+✅ NFR: 17 — определены (performance/usability/security/reliability)
 ✅ Контракты: 15 (1.1–5.4) — определены
 
 АРХИТЕКТУРА:
@@ -270,8 +263,7 @@ SECRET_KEY=your-secret-key
 TELEGRAM_BOT_TOKEN=your-bot-token
 CARGOTECH_PHONE=+7 911 111 11 11
 CARGOTECH_PASSWORD=123-123
-ENCRYPTION_KEY=$(python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())")
-CARGOTECH_TOKEN_CACHE_TTL=3300
+CARGOTECH_TOKEN_CACHE_TTL=86400  # optional
 REDIS_URL=redis://localhost:6379/0
 DATABASE_URL=postgresql://...
 EOF
@@ -339,8 +331,8 @@ Compliance                → FINAL_COMPLETE_v3.1.md (ИТОГОВЫЙ СТАТ�
 - [ ] Все тесты passing (> 90% coverage)
 - [ ] Security audit completed (0 High vulns)
 - [ ] Load test: 1000+ concurrent OK
-- [ ] Token encryption verified
-- [ ] Token auto-refresh tested
+- [ ] Token storage verified (cache/localStorage, no secrets in logs)
+- [ ] 401 handling tested (invalidate token → re-login → retry)
 - [ ] Monitoring + alerting configured
 - [ ] On-call runbooks prepared
 

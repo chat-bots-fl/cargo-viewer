@@ -32,18 +32,18 @@
 ```
 ПРОБЛЕМА:        Как сервер логинится на CargoTech API?
 РЕШЕНИЕ v3.1:    Сервер логинится один раз → кэширует token → все используют
-МОДЕЛЬ:          APIToken (encrypted token storage)
-СЕРВИС:          CargoTechAuthService (login + refresh)
-REFRESH:         Auto-refresh перед истечением (background task)
-SECURITY:        Fernet encryption + audit logging
+ХРАНЕНИЕ:        Redis cache (TTL configurable) / localStorage (client-side)
+СЕРВИС:          CargoTechAuthService (login + cache + 401 re-login)
+SECURITY:        token never logged; no refresh_token/expires_in
+STATUS:          ✅ Verified: Bearer Token работает
 ```
 
 ### Дополнительно:
 
 ```
-✅ +1 новая модель (APIToken)
-✅ +3 новых env переменных (PHONE, PASSWORD, ENCRYPTION_KEY)
-✅ +2 новых зависимости (cryptography, django-redis)
+✅ CargoTech token без новых таблиц (cache only)
+✅ +2 новых env переменных (PHONE, PASSWORD) + optional TTL
+✅ +1 новая зависимость (django-redis)
 ✅ +1 новый процесс (P5: MANAGE_API_CREDENTIALS)
 ✅ +1 новый процесс (P6: MANAGE_SUBSCRIPTION & PAYMENTS)
 ✅ +1 новый модуль PBS (M5: Subscription & Payment)
@@ -139,30 +139,25 @@ DEPLOY_GUIDE_v3.1.md
 ### Что это:
 
 ```python
-# apps/integrations/services.py
+# apps/integrations/cargotech_auth.py
 class CargoTechAuthService:
     @staticmethod
-    def login(phone: str, password: str) -> dict:
+    def login(phone: str, password: str, remember: bool = True) -> str:
         """
         Server-side login to CargoTech API
         
         Args:
             phone: "+7 911 111 11 11"
             password: "123-123"
+            remember: true/false
         
         Returns:
-            {
-                "access_token": "...",
-                "refresh_token": "...",
-                "expires_in": 3600
-            }
+            token: "12345|<opaque_token>" (Bearer, Sanctum)
         """
         # 1. Call CargoTech API
-        # 2. Get tokens
-        # 3. Encrypt with Fernet
-        # 4. Store in DB (APIToken)
-        # 5. Cache in Redis (55 min)
-        # 6. Return token
+        # 2. Get token from {data:{token}}
+        # 3. Cache in Redis (TTL configurable, default 24h)
+        # 4. Return token
 ```
 
 ### Как используется:
@@ -175,7 +170,7 @@ CargoTechAuthService.login(
 )
 
 # During requests (driver requests cargos)
-token = CargoTechAuthService.get_valid_token()  # from cache or DB
+token = CargoTechAuthService.get_token()  # from cache or login()
 response = cargotech_api.get("/cargos", headers={"Authorization": f"Bearer {token}"})
 ```
 
@@ -184,8 +179,7 @@ response = cargotech_api.get("/cargos", headers={"Authorization": f"Bearer {toke
 ```bash
 CARGOTECH_PHONE=+7 911 111 11 11
 CARGOTECH_PASSWORD=123-123
-ENCRYPTION_KEY=Fernet.generate_key()
-CARGOTECH_TOKEN_CACHE_TTL=3300
+CARGOTECH_TOKEN_CACHE_TTL=86400  # optional
 ```
 
 ---
@@ -196,9 +190,9 @@ CARGOTECH_TOKEN_CACHE_TTL=3300
 ПРОЦЕССЫ (6):
 ┌─ P1: Authentication (Telegram login)
 ├─ P2: Browse Cargos (list with filters)
-├─ P3: View Cargo Detail (with extranote)
+├─ P3: View Cargo Detail (comment `data.extra.note`)
 ├─ P4: Respond to Cargo (send response)
-├─ P5: Manage API Credentials ← NEW! (token login + refresh)
+├─ P5: Manage API Credentials ← NEW! (token login + cache + 401 re-login)
 └─ P6: Manage Subscription & Payments ← NEW! (M5)
 
 КОНТРАКТЫ (15):
@@ -228,14 +222,14 @@ CARGOTECH_TOKEN_CACHE_TTL=3300
 - [ ] Tests passing (> 85%)
 - [ ] Security audit (0 High)
 - [ ] Load test OK (1000+)
-- [ ] Token encryption verified
-- [ ] Auto-refresh tested
+- [ ] CargoTech login + /v1/me verified
+- [ ] 401 handling tested (invalidate token → re-login)
 - [ ] Monitoring configured
 
 ### После deployment:
 - [ ] Alerts active
-- [ ] Token created in DB
-- [ ] Token refresh working (check in 55 min)
+- [ ] Token cached in Redis
+- [ ] No repeated 401/re-login loops in logs
 - [ ] No errors in logs
 - [ ] Performance OK (< 2s)
 
@@ -257,7 +251,7 @@ CARGOTECH_TOKEN_CACHE_TTL=3300
 
 ДНИ 7-9:   Views & Templates
 ├─ List view
-├─ Detail view (extranote)
+├─ Detail view (comment `data.extra.note`)
 └─ HTMX
 
 ДНИ 10-11: M4 Telegram Bot (Contract 4.1-4.2)
@@ -277,12 +271,12 @@ CARGOTECH_TOKEN_CACHE_TTL=3300
 Backend:
 ├─ Django 4.2
 ├─ Django REST Framework
-├─ Celery (for token refresh)
+├─ Celery (background tasks)
 └─ PostgreSQL
 
 API Authentication:
 ├─ CargoTech API (external)
-└─ Fernet encryption (cryptography lib)
+└─ Bearer Token (Laravel Sanctum)
 
 Caching:
 ├─ Redis (session + token)
@@ -306,8 +300,7 @@ Deployment:
 # NEW IN v3.1
 CARGOTECH_PHONE="+7 911 111 11 11"
 CARGOTECH_PASSWORD="123-123"
-ENCRYPTION_KEY="<Fernet key>"
-CARGOTECH_TOKEN_CACHE_TTL="3300"
+CARGOTECH_TOKEN_CACHE_TTL="86400"  # optional
 
 # M5 (payments/subscriptions)
 # ЮKassa credentials managed via admin panel (SystemSetting, encrypted)

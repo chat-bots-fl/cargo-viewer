@@ -1,7 +1,7 @@
-# 🚀 DEPLOY GUIDE v3.1
+# 🚀 DEPLOY GUIDE v3.2
 
-**Дата:** 4 января 2026  
-**Версия:** 3.1 (актуализация v3.0 + M5)
+**Дата:** 7 января 2026  
+**Версия:** 3.2 (v3.1 + HAR Validation Updates)
 
 ---
 
@@ -29,8 +29,6 @@ DATABASE_URL=postgresql://...
 # CargoTech (server-side login)
 CARGOTECH_PHONE=+7 911 111 11 11
 CARGOTECH_PASSWORD=123-123
-ENCRYPTION_KEY=<Fernet key>
-CARGOTECH_TOKEN_CACHE_TTL=3300
 ```
 
 M5 (платежи/подписки):
@@ -47,14 +45,13 @@ python manage.py migrate
 ```
 
 Если приложения разделены по пакетам, миграции должны включать как минимум:
-- `integrations` (CargoTech tokens)
 - `payments`, `subscriptions`, `promocodes` (M5)
 
 ---
 
 ## 🧵 Фоновые задачи
 
-- Token refresh/monitoring для CargoTech (P5)
+ - (Опционально) auth health check/alerting для CargoTech (P5)
 - Обработка платежных событий/очистки (M5, по необходимости)
 
 Рекомендуемая схема:
@@ -89,19 +86,40 @@ python manage.py migrate
 
 ---
 
+## ✅ Валидация после деплоя
+
+### Проверка API интеграции
+
+```bash
+# 1. Проверить server-side token
+redis-cli GET cargotech:api:token
+
+# 2. Проверить login через Django shell
+python manage.py shell
+>>> from apps.integrations.cargotech_auth import CargoTechAuthService
+>>> print(CargoTechAuthService.get_token())
+
+# 3. Тестовый запрос cargo list
+TOKEN=$(redis-cli GET cargotech:api:token)
+curl -H "Authorization: Bearer $TOKEN" \
+  "https://api.cargotech.pro/v2/cargos/views?include=contacts&limit=1&offset=0&filter[mode]=my&filter[user_id]=0"
+```
+
+---
+
 ## 📅 План разработки (сводка)
 
 - База (M1–M4 + Contract 1.4 server‑side login): 14 дней
 - M5 (подписки/платежи): +10 дней
 - Итого: 24 дня
 
-Подробный план: `FINAL_PROJECT_DOCUMENTATION_v3.1.md` (Часть 8) + `FINAL_COMPLETE_v3.1.md`.
+Подробный план: `FINAL_PROJECT_DOCUMENTATION_v3.2.md` (Часть 8). Legacy v3.1 план: `legacy_3.1/FINAL_COMPLETE_v3.1.md`.
 
 ---
 
 ## 📌 Где смотреть детали
 
-- Архитектура/чек‑листы: `FINAL_PROJECT_DOCUMENTATION_v3.1.md`
-- Контракты: `API_CONTRACTS_v3.1.md`
-- Reference код реализации: `IMPLEMENTATION_CODE_v3.1.md`
+- Архитектура/чек‑листы: `FINAL_PROJECT_DOCUMENTATION_v3.2.md`
+- Контракты: `API_CONTRACTS_v3.2.md`
+- Reference код реализации: `IMPLEMENTATION_CODE_v3.2.md`
 - M5 подробно: `M5_SUBSCRIPTION_PAYMENT_FULL.md`

@@ -1,0 +1,49 @@
+COMPLIANCE ANALYSIS REPORT (HAR vs docs v3.2)
+Date: 2026-01-08
+
+Scope
+- Review of HAR traffic in docs/har/*.har vs. documentation v3.2
+- Goal: align docs with real CargoTech API request/response behavior
+
+Key findings (HAR-validated)
+1) Contract 3.1 (filter[wv]) format
+   - API accepts arbitrary "{weight}-{volume}" values (supports decimals)
+   - Fixed frontend category mapping is not required by API (treat as optional UX presets)
+
+2) Cargo list endpoint (GET /v2/cargos/views): request/response shape
+   - Response shape: {data, meta}; meta={limit, offset, size} (no "total")
+   - "points" in cargo cards is an object with start/finish (not a list)
+
+3) Cargo list parameters (observed in 100% of /v2/cargos/views requests)
+   - include=contacts
+   - limit / offset
+   - filter[mode] (my | all)
+   - filter[user_id] (usually 0, sometimes explicit user id)
+   - When start/finish point filters are used, *_point_type is present too
+
+4) Cities dictionary endpoint (autocomplete)
+   - Endpoint observed: GET /v1/dictionaries/points?filter[name]={query}
+   - Response shape: {data, meta}; meta={limit, offset, size}
+   - data[] items observed: {id, name, type}
+   - UI recommendation: debounce + minimal length threshold (API accepts short/empty values too)
+
+5) Filtering formats observed in /v2/cargos/views
+   - filter[load_types], filter[truck_types]: CSV list of ids ("1,2,3")
+   - filter[distance]: range "min,max" in km (e.g., "0,9999")
+   - filter[price], filter[price_per_km]: range "min,max" in коп (e.g., "0,99999900", "0,99900")
+   - filter[owner_company]: company INN (e.g., "7700000000")
+
+6) Other endpoints present in HAR (not described in current project scope)
+   - POST /v1/auth/login (returns data.token)
+   - GET /v1/me
+   - GET /v1/notifications/count?with_transport=1
+   - GET /v1/company/staff
+   - GET /v2/panel/help-guides, /v2/panel/release-notes
+   - GET /v2/cargos/{id}/prices, /auction, /relevant-transport-count
+   - POST /v1/suggests/company
+   - POST /v1/external-carrier/messages/text
+   - GET /v1/cargos/status/{id}
+   - GET /v2/cargos/filters (observed empty data in these HAR files)
+
+Notes
+- Some HAR exports may hide Authorization/cookies; absence in HAR is not proof of no auth.

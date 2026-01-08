@@ -54,16 +54,15 @@
 Реализация:
 1. Сервер хранит credentials в .env (CARGOTECH_PHONE, CARGOTECH_PASSWORD)
 2. При старте Django → CargoTechAuthService.login()
-3. Получает access_token + refresh_token от API
-4. Сохраняет зашифрованным в БД (Fernet)
-5. Кэширует в Redis (55 минут)
+3. Получает Bearer token от API (`POST /v1/auth/login` → `{data:{token}}`)
+4. Кэширует token в Redis (TTL configurable, например 24ч)
 6. Все запросы водителей → используют cached token
-7. Перед истечением → auto-refresh (background task)
+7. При `401` → invalidate cache → re-login → retry
 
 Результат:
 - Водители НЕ имеют API credentials ✅
-- Token защищен и зашифрован ✅
-- Auto-renewal перед истечением ✅
+- Token не хранится в БД, не логируется ✅
+- Auto-relogin при инвалидном токене ✅
 - Централизованное управление ✅
 ```
 
@@ -147,7 +146,7 @@ P2: BROWSE CARGOS
 ├─ Driver requests cargo list
 ├─ TokenService validates session
 ├─ CargoService fetches using API token (1.4)
-├─ Cache result (1 hour)
+├─ Cache result (5 min)
 └─ Return to driver
 
 P3: VIEW CARGO DETAIL
@@ -163,11 +162,10 @@ P4: RESPOND TO CARGO
 P5: MANAGE API CREDENTIALS ← NEW!
 ├─ Server startup → CargoTechAuthService.login()
 ├─ Get token from API
-├─ Store encrypted in DB
-├─ Cache token (55 min)
 ├─ Use for all requests
-├─ Before expiry → auto-refresh
-└─ Monitor and alert
+├─ Cache token in Redis (TTL configurable, e.g. 24h)
+├─ On 401 → invalidate cache → re-login → retry once
+└─ (Optional) Health check + alerting
 
 P6: MANAGE SUBSCRIPTION & PAYMENTS ← NEW!
 ├─ Check subscription status (paywall)
@@ -193,20 +191,12 @@ CargoTechAuthService.login(
     password="123-123"             # from .env
 )
     ↓
-POST /api/v1/auth/login (to CargoTech)
+POST /v1/auth/login (to CargoTech)
     ↓
 Response:
-{
-    "access_token": "eyJhbG...",
-    "refresh_token": "eyJhbG...",
-    "expires_in": 3600
-}
+{"data": {"token": "12345|<opaque_token>"}}  # Bearer (Sanctum), not JWT
     ↓
-Encrypt both tokens with Fernet
-    ↓
-Store in DB (APIToken model)
-    ↓
-Cache in Redis (TTL=3300 sec, 55 min)
+Cache token in Redis (TTL configurable, e.g. 86400 sec)
     ↓
 Ready for driver requests!
 ```
@@ -224,7 +214,7 @@ Server:
 ├─ POST https://cargotech.api/cargos/
 │   └─ with Authorization: Bearer <token>
 ├─ Receive cargo list
-├─ Cache in Redis (1 hour)
+├─ Cache in Redis (5 min)
 └─ Return to driver
 
 TOTAL LATENCY:
@@ -270,44 +260,28 @@ ALERT if:
    └─ Audit: All login attempts logged
 
 2. ACCESS TOKEN
-   ├─ Storage: Encrypted in DB (Fernet)
-   ├─ Cache: In Redis (encrypted at rest)
-   ├─ TTL: 55 min (refreshed before 1 hour expiry)
+   ├─ Storage: Redis cache (server-side)
+   ├─ TTL: configurable (default 24h) + re-login on 401
    ├─ Transmission: HTTPS only
-   └─ Access: Server-only (drivers never get it)
+   ├─ Access: Server-only (drivers never get it)
+   └─ Logging: Token value never logged
 
-3. REFRESH TOKEN
-   ├─ Storage: Encrypted in DB (Fernet)
-   ├─ Access: Only CargoTechAuthService
-   ├─ TTL: 7 days (CargoTech specific)
-   └─ Rotation: Every refresh
-
-4. SESSION TOKENS (Telegram)
+3. SESSION TOKENS (Telegram)
    ├─ Storage: Redis (encrypted)
    ├─ TTL: 24 hours
    ├─ Validation: Init data hash check
    └─ Signature: Constant-time comparison
 
-5. DRIVER PRIVACY
+4. DRIVER PRIVACY
    ├─ Cargo access: Per-session only
    ├─ No credential leakage
    ├─ Audit logging: All access
    └─ Rate limiting: Token bucket
 ```
 
-### Encryption Strategy:
+### Token storage note
 
-```python
-# .env
-ENCRYPTION_KEY = Fernet.generate_key()
-
-# Usage
-from cryptography.fernet import Fernet
-
-cipher = Fernet(ENCRYPTION_KEY)
-encrypted = cipher.encrypt(token.encode())
-decrypted = cipher.decrypt(encrypted).decode()
-```
+- Токен CargoTech хранится в Redis cache; дополнительный ключ шифрования не требуется.
 
 ---
 
@@ -318,7 +292,7 @@ decrypted = cipher.decrypt(encrypted).decode()
 ```
 ✅ FR-1: Authentication via Telegram WebApp
 ✅ FR-2: Browse cargo list with filters
-✅ FR-3: View cargo details (+ extranote field)
+✅ FR-3: View cargo details (+ comment `data.extra.note`)
 ✅ FR-4: Respond to cargo with rating
 ✅ FR-5: Receive status updates via Telegram
 ✅ FR-6: Server-side API login (NEW!)
@@ -333,10 +307,10 @@ decrypted = cipher.decrypt(encrypted).decode()
 ✅ NFR-1.4: Cache strategy (3-level)
 ✅ NFR-1.5: Rate limiting (token bucket)
 ✅ NFR-2.1: Telegram max_age validation
-✅ NFR-2.2: API token encryption (Fernet)
+✅ NFR-2.2: No secrets in logs (token never logged)
 ✅ NFR-2.3: Session isolation per driver
 ✅ NFR-2.4: Audit logging all operations
-✅ NFR-2.5: Token auto-refresh before expiry
+✅ NFR-2.5: 401 handling (invalidate token → re-login → retry)
 ```
 
 ---
@@ -348,13 +322,12 @@ decrypted = cipher.decrypt(encrypted).decode()
 ```
 apps/
 └─ integrations/
-   ├─ models.py (+ APIToken model)
-   ├─ services/
-   │  └─ cargotech_auth.py (CargoTechAuthService)
-   ├─ tasks.py (token refresh & monitoring)
-   ├─ tests/
-   │  └─ test_cargotech_auth.py
-   └─ admin.py (manage tokens)
+   ├─ cargotech_auth.py (CargoTechAuthService)
+   ├─ cargotech_client.py (CargoAPIClient)
+   ├─ monitoring.py (optional)
+   ├─ tasks.py (optional health check)
+   └─ tests/
+      └─ test_cargotech_auth.py
 ```
 
 ### Новые переменные .env:
@@ -364,11 +337,8 @@ apps/
 CARGOTECH_PHONE=+7 911 111 11 11
 CARGOTECH_PASSWORD=123-123
 
-# Encryption
-ENCRYPTION_KEY=$(python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())")
-
-# Caching
-CARGOTECH_TOKEN_CACHE_TTL=3300  # 55 minutes
+# Optional: token cache TTL (seconds)
+CARGOTECH_TOKEN_CACHE_TTL=86400
 
 # Existing
 TELEGRAM_BOT_TOKEN=...
@@ -380,36 +350,28 @@ DATABASE_URL=...
 
 ```
 # requirements.txt
-cryptography>=41.0.0
 django-redis>=5.4.0
 ```
 
-### Новая Migration:
+### Migration note:
 
 ```bash
-python manage.py makemigrations integrations
-python manage.py migrate integrations
+# CargoTech auth doesn't require DB migrations (token stored in cache)
 ```
 
 ### Django startup hook:
 
 ```python
-# apps/integrations/apps.py
+# apps/integrations/apps.py (optional warm-up)
 from django.apps import AppConfig
-from django.db.models.signals import post_migrate
 
 class IntegrationsConfig(AppConfig):
     default_auto_field = 'django.db.models.BigAutoField'
     name = 'apps.integrations'
     
     def ready(self):
-        from .services.cargotech_auth import CargoTechAuthService
-        
-        # Login on Django startup
-        post_migrate.connect(
-            lambda sender, **kwargs: CargoTechAuthService.login_on_startup(),
-            sender=self
-        )
+        # No startup hook required: token is obtained lazily and cached in Redis.
+        return
 ```
 
 ---
@@ -419,8 +381,8 @@ class IntegrationsConfig(AppConfig):
 ### Pre-Deployment (Testing):
 
 - [ ] All tests pass (pytest --cov > 85%)
-- [ ] Encryption/decryption tested
-- [ ] Token refresh tested (manual)
+- [ ] CargoTech login + /v1/me tested
+- [ ] 401 handling tested (invalidate token → re-login → retry)
 - [ ] Load test: 1000 concurrent OK
 - [ ] Security audit: 0 High/Critical
 - [ ] Code review: 2 approvals
@@ -429,18 +391,16 @@ class IntegrationsConfig(AppConfig):
 
 - [ ] Set .env in production
 - [ ] Run migrations: `python manage.py migrate`
-- [ ] Create Fernet key: `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`
 - [ ] Test login manually: `python manage.py shell`
 - [ ] Deploy code (Blue-Green)
 - [ ] Monitor logs: `tail -f /var/log/django/cargotech_auth.log`
-- [ ] Verify token created: Check DB
+- [ ] Verify token cached: `redis-cli GET cargotech:api:token`
 - [ ] Smoke test: Open WebApp and request cargos
 
 ### Post-Deployment:
 
 - [ ] Monitoring alerts active
-- [ ] Token refresh working (check logs in 55 min)
-- [ ] No token expiry errors
+- [ ] No repeated 401/re-login loops in logs
 - [ ] Performance metrics OK (< 2s p95)
 - [ ] Audit logs being written
 - [ ] Escalation contacts notified
@@ -465,29 +425,24 @@ class IntegrationsConfig(AppConfig):
 
 4. Manually trigger login:
    python manage.py shell
-   >>> from apps.integrations.services.cargotech_auth import CargoTechAuthService
+   >>> from apps.integrations.cargotech_auth import CargoTechAuthService
    >>> token = CargoTechAuthService.login("+7 911 111 11 11", "123-123")
    >>> print(token)
 
-5. If DB error:
-   python manage.py migrate integrations
+5. If Redis/cache error:
+   - Check `REDIS_URL` and Django cache backend
 ```
 
-### Если token refresh fails:
+### Если token стал невалидным (401):
 
 ```
-1. Check Celery running:
-   celery -A config worker -l info
+1. Clear cached token:
+   redis-cli DEL cargotech:api:token
 
-2. Check task in DB:
+2. Trigger login again:
    python manage.py shell
-   >>> from django_celery_beat.models import PeriodicTask
-   >>> PeriodicTask.objects.filter(name='refresh-tokens')
-
-3. Manual refresh:
-   python manage.py shell
-   >>> from apps.integrations.services.cargotech_auth import CargoTechAuthService
-   >>> CargoTechAuthService.refresh_token_manual()
+   >>> from apps.integrations.cargotech_auth import CargoTechAuthService
+   >>> CargoTechAuthService.get_token()
 ```
 
 ### Если водители не могут запросить cargo:
@@ -499,15 +454,10 @@ class IntegrationsConfig(AppConfig):
    >>> TokenService.validate_session(session_token)
 
 2. Check API token in cache:
-   redis-cli GET cargotech_token
+   redis-cli GET cargotech:api:token
 
-3. Check API token in DB:
-   python manage.py shell
-   >>> from apps.integrations.models import APIToken
-   >>> APIToken.objects.latest('created_at')
-
-4. Check API response:
-   curl -H "Authorization: Bearer <token>" https://api.cargotech.pro/v1/cargos/
+3. Check API response:
+   curl -H "Authorization: Bearer <token>" "https://api.cargotech.pro/v2/cargos/views?limit=1&offset=0"
 ```
 
 ---
@@ -617,7 +567,7 @@ class IntegrationsConfig(AppConfig):
 ДЕНЬ 1-2:  M1 Authentication
 ├─ Contract 1.1, 1.2, 1.3 (Telegram + session)
 ├─ Contract 1.4 (API login) ← NEW!
-└─ Database: Session + APIToken models
+└─ Database: Session models (CargoTech token in cache)
 
 ДЕНЬ 3-4:  M2 API Integration
 ├─ Contract 2.1, 2.2, 2.3 (using API token)
@@ -630,7 +580,7 @@ class IntegrationsConfig(AppConfig):
 
 ДЕНЬ 7-9:  Views & Templates
 ├─ List view (with filters)
-├─ Detail view (with extranote)
+├─ Detail view (comment `data.extra.note`)
 └─ HTMX integration
 
 ДЕНЬ 10-11: M4 Telegram Bot

@@ -1,9 +1,9 @@
-# 🧩 IMPLEMENTATION CODE v3.1 (reference)
+# 🧩 IMPLEMENTATION CODE v3.2 (reference)
 
-**Дата:** 4 января 2026  
-**Версия:** v3.1 (v3.0 + интеграция M5)
+**Дата:** 7 января 2026  
+**Версия:** v3.2 (v3.1 + HAR Validation Updates)
 
-Этот файл закрепляет **copy‑paste код критических компонентов**, который в v2.0/v2.1 был описан в deprecated‑документах, а в v3.1 остался в основном на уровне контрактов/архитектуры.
+Этот файл закрепляет **copy‑paste код критических компонентов**, который в v2.0/v2.1 был описан в deprecated‑документах, а в v3.2 приведён к актуальному поведению production API (HAR‑validated).
 
 **Источники (v2.1):**
 - `docs/[DEPRECATED]_risk_analysis_final.md`
@@ -345,124 +345,231 @@ class TelegramAuthService:
 
 ---
 
-## 4) Weight/Volume normalization (Contract 3.1)
+## 4) Weight/Volume normalization (Contract 3.1) (v3.2)
+
+**ВАЖНО:** CargoTech API принимает **произвольные** значения `filter[wv]` в формате `{weight}-{volume}`
+и поддерживает десятичные значения (например: `1.5-9`, `7.5-45`).
 
 Компоненты:
-- `WEIGHT_VOLUME_CATEGORIES` (маппинг 7 категорий)
-- `normalize_weight_volume_filter()` (конвертация select value → API параметры)
+- `FilterService.validate_weight_volume()` (валидация + нормализация в формат `filter[wv]`)
 
-### apps/filtering/constants.py (новый)
-
-```python
-"""
-Weight/Volume filter categories for CargoTech API
-Defines predefined cargo capacity ranges
-"""
-
-WEIGHT_VOLUME_CATEGORIES = {
-    "1_3": {
-        "label": "1-3 т / до 15 м³",
-        "weight_min_kg": 1000,
-        "weight_max_kg": 3000,
-        "volume_min_m3": 0,
-        "volume_max_m3": 15,
-    },
-    "3_5": {
-        "label": "3-5 т / 15-25 м³",
-        "weight_min_kg": 3000,
-        "weight_max_kg": 5000,
-        "volume_min_m3": 15,
-        "volume_max_m3": 25,
-    },
-    "5_10": {
-        "label": "5-10 т / 25-40 м³",
-        "weight_min_kg": 5000,
-        "weight_max_kg": 10000,
-        "volume_min_m3": 25,
-        "volume_max_m3": 40,
-    },
-    "10_15": {
-        "label": "10-15 т / 40-60 м³",
-        "weight_min_kg": 10000,
-        "weight_max_kg": 15000,
-        "volume_min_m3": 40,
-        "volume_max_m3": 60,
-    },
-    "15_20": {
-        "label": "15-20 т / 60-82 м³",
-        "weight_min_kg": 15000,
-        "weight_max_kg": 20000,
-        "volume_min_m3": 60,
-        "volume_max_m3": 82,
-    },
-    "20": {
-        "label": "20+ т / 82+ м³",
-        "weight_min_kg": 20000,
-        "weight_max_kg": 999999,
-        "volume_min_m3": 82,
-        "volume_max_m3": 999999,
-    },
-}
-
-# Frontend select options (order matters)
-WEIGHT_VOLUME_OPTIONS = [
-    ("any", "Любой вес и объем"),
-    ("1_3", "1-3 т / до 15 м³"),
-    ("3_5", "3-5 т / 15-25 м³"),
-    ("5_10", "5-10 т / 25-40 м³"),
-    ("10_15", "10-15 т / 40-60 м³"),
-    ("15_20", "15-20 т / 60-82 м³"),
-    ("20", "20+ т / 82+ м³"),
-]
-```
-
-### apps/filtering/services.py
+### apps/filtering/services.py (v3.2)
 
 ```python
+# apps/filtering/services.py
+
 from django.core.exceptions import ValidationError
+import re
 
-from .constants import WEIGHT_VOLUME_CATEGORIES
+class FilterService:
 
+    @staticmethod
+    def validate_weight_volume(value: str) -> dict:
+        """
+        Валидация и нормализация фильтра вес/объем.
 
-def normalize_weight_volume_filter(value: str) -> dict:
-    """
-    Convert frontend weight_volume select value to API parameters.
+        Args:
+            value: строка формата "{weight}-{volume}"
+                   или пустая строка для отключения фильтра
 
-    Args:
-        value: "1_3", "3_5", "5_10", "10_15", "15_20", "20", "any", or empty
+        Returns:
+            {"filter[wv]": value} или {} если пусто
 
-    Returns:
-        {
-            "weight_min_kg": int,
-            "weight_max_kg": int,
-            "volume_min_m3": int,
-            "volume_max_m3": int,
-        }
-        or {} if value is "any" or empty (no filter)
-    """
+        Raises:
+            ValidationError: если формат некорректен
+        """
+        if not value or value == "any":
+            return {}
 
-    if not value or value == "any":
-        return {}
+        # Валидация формата: число/десятичное + дефис + число/десятичное
+        pattern = r'^\d+(\.\d+)?-\d+(\.\d+)?$'
+        if not re.match(pattern, value):
+            raise ValidationError(
+                f"Invalid weight_volume format: '{value}'. "
+                f"Expected format: '{{weight}}-{{volume}}', "
+                f"example: '15-65' or '1.5-9'"
+            )
 
-    if value not in WEIGHT_VOLUME_CATEGORIES:
-        raise ValidationError(
-            f"Invalid weight_volume value: {value}. "
-            f"Must be one of: {', '.join(WEIGHT_VOLUME_CATEGORIES.keys())} or 'any'"
-        )
+        # Проверка диапазонов (разумные пределы)
+        weight, volume = value.split('-')
+        weight_val = float(weight)
+        volume_val = float(volume)
 
-    category = WEIGHT_VOLUME_CATEGORIES[value]
-    return {
-        "weight_min_kg": category["weight_min_kg"],
-        "weight_max_kg": category["weight_max_kg"],
-        "volume_min_m3": category["volume_min_m3"],
-        "volume_max_m3": category["volume_max_m3"],
-    }
+        if not (0.1 <= weight_val <= 1000):
+            raise ValidationError(
+                f"Weight {weight_val}t out of range (0.1-1000)"
+            )
+
+        if not (0.1 <= volume_val <= 200):
+            raise ValidationError(
+                f"Volume {volume_val}m³ out of range (0.1-200)"
+            )
+
+        return {"filter[wv]": value}
 ```
 
 ---
 
-## 5) Где это связано с актуальными контрактами v3.1
+## 5) CargoTech API auth (Bearer Token) (Contract 1.4)
 
-- Контракты (что именно должно быть реализовано): `API_CONTRACTS_v3.1.md`
-- Полные контракты/архитектура: `FINAL_PROJECT_DOCUMENTATION_v3.1.md` (Часть 5)
+Компоненты:
+- `CargoTechAuthService` (получить и кэшировать Bearer token)
+- `CargoAPIClient` (делать запросы с `Authorization: Bearer <token>`, re-login на `401`)
+
+### apps/integrations/cargotech_auth.py (reference)
+
+```python
+import logging
+from typing import Any
+
+import requests
+from django.conf import settings
+from django.core.cache import cache
+
+logger = logging.getLogger(__name__)
+
+
+class CargoTechAuthError(RuntimeError):
+    pass
+
+
+class CargoTechAuthService:
+    """
+    CargoTech API auth (Laravel Sanctum).
+
+    Login response shape:
+        {"data": {"token": "12345|<opaque_token>"}}
+    """
+
+    BASE_URL = "https://api.cargotech.pro"
+    CACHE_KEY = "cargotech:api:token"
+    DEFAULT_CACHE_TTL = 86400  # 24h (token has no expires_in)
+
+    @classmethod
+    def login(cls, phone: str, password: str, remember: bool = True) -> str:
+        response = requests.post(
+            f"{cls.BASE_URL}/v1/auth/login",
+            json={"phone": phone, "password": password, "remember": remember},
+            timeout=10,
+        )
+        response.raise_for_status()
+
+        payload: dict[str, Any] = response.json()
+        token = payload["data"]["token"]
+
+        cache_ttl = getattr(settings, "CARGOTECH_TOKEN_CACHE_TTL", cls.DEFAULT_CACHE_TTL)
+        cache.set(cls.CACHE_KEY, token, timeout=cache_ttl)
+        return token
+
+    @classmethod
+    def get_token(cls) -> str:
+        cached = cache.get(cls.CACHE_KEY)
+        if cached:
+            return cached
+
+        phone = settings.CARGOTECH_PHONE
+        password = settings.CARGOTECH_PASSWORD
+        if not phone or not password:
+            raise CargoTechAuthError("CargoTech credentials not configured")
+
+        return cls.login(phone=phone, password=password, remember=True)
+
+    @classmethod
+    def invalidate_cached_token(cls) -> None:
+        cache.delete(cls.CACHE_KEY)
+
+    @classmethod
+    def auth_headers(cls) -> dict[str, str]:
+        return {
+            "Authorization": f"Bearer {cls.get_token()}",
+            "Accept": "application/json",
+        }
+```
+
+### apps/integrations/cargotech_client.py (reference)
+
+```python
+import requests
+from .cargotech_auth import CargoTechAuthService
+
+
+class CargoAPIClient:
+    BASE_URL = "https://api.cargotech.pro"
+
+    @classmethod
+    def request(cls, method: str, path: str, *, params=None, json=None, timeout: int = 15):
+        url = f"{cls.BASE_URL}{path}"
+        response = requests.request(
+            method,
+            url,
+            headers=CargoTechAuthService.auth_headers(),
+            params=params,
+            json=json,
+            timeout=timeout,
+        )
+
+        if response.status_code == 401:
+            CargoTechAuthService.invalidate_cached_token()
+            response = requests.request(
+                method,
+                url,
+                headers=CargoTechAuthService.auth_headers(),
+                params=params,
+                json=json,
+                timeout=timeout,
+            )
+
+        response.raise_for_status()
+        return response.json()
+```
+
+---
+
+## 6) Cargo comment field (`data.extra.note`) (detail only)
+
+Комментарий к грузу находится **только** в detail endpoint:
+`GET /v1/carrier/cargos/{cargo_id}?source=1&include=contacts`
+
+### JS/TypeScript (safe access)
+
+```ts
+const comment = cargo.data?.extra?.note || "";
+```
+
+### Python (safe access)
+
+```python
+cargo_data = payload.get("data", {})
+comment = (cargo_data.get("extra") or {}).get("note") or ""
+```
+
+### TypeScript types (extra object: 10 fields)
+
+```ts
+export interface CargoExtra {
+  note: string | null;
+  external_inn: string | null;
+  custom_cargo_type: string | null;
+  integrate: unknown | null;
+  is_delete_from_archive: boolean;
+  krugoreis: boolean;
+  partial_load: boolean;
+  note_valid: boolean;
+  integrate_contacts: unknown | null;
+  url: string | null;
+}
+
+export interface CargoDetailResponse {
+  data: {
+    extra?: CargoExtra | null;
+  } & Record<string, unknown>;
+}
+```
+
+---
+
+## 7) Где это связано с актуальными контрактами v3.2
+
+- Контракты (что именно должно быть реализовано): `API_CONTRACTS_v3.2.md`
+- Полные контракты/архитектура: `FINAL_PROJECT_DOCUMENTATION_v3.2.md` (Часть 5)
 - Deprecated‑источники (история решений + контекст): `docs/[DEPRECATED]_risk_analysis_final.md`, `docs/[DEPRECATED]_summary_of_changes.md`, `docs/[DEPRECATED]_package_readme.md`

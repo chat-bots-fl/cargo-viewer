@@ -135,15 +135,14 @@
 РЕШЕНИЕ:
 ✅ Сервер хранит credentials в .env
 ✅ При старте → Login to API → Get token
-✅ Сохраняет token (зашифрованный)
-✅ Кэширует (55 минут)
+✅ Кэширует token в Redis (TTL configurable, например 24ч)
 ✅ Все водители используют этот token
-✅ Auto-refresh перед истечением
+✅ При 401 → invalidate cache → re-login → retry once
 
-МОДЕЛЬ:        APIToken (для хранения)
+МОДЕЛЬ:        (не требуется, token хранится в cache)
 СЕРВИС:        CargoTechAuthService (логика)
-БЕЗОПАСНОСТЬ:  Fernet encryption
-МОНИТОРИНГ:    TokenMonitor
+БЕЗОПАСНОСТЬ:  Bearer Token (Sanctum), token never logged
+МОНИТОРИНГ:    Health check (optional)
 ```
 
 ### Дополнительно:
@@ -151,9 +150,8 @@
 ```
 ✅ P5: MANAGE_API_CREDENTIALS (новый процесс)
 ✅ Обновленная архитектура (15 контрактов)
-✅ Новые миграции БД
 ✅ Новые .env переменные
-✅ Новые зависимости (cryptography, django-redis)
+✅ Новые зависимости (django-redis)
 ```
 
 ---
@@ -289,7 +287,7 @@
            └─ Filter validation + query building
 
 ДНИ 7-9:   Views & Templates
-           └─ List view + Detail view (extranote)
+           └─ List view + Detail view (comment `data.extra.note` in detail)
 
 ДНИ 10-11: M4 Telegram Bot (Contract 4.1-4.2)
            └─ Status updates
@@ -309,13 +307,9 @@
 # NEW IN v3.1 - ОБЯЗАТЕЛЬНО ДОБАВИТЬ
 CARGOTECH_PHONE="+7 911 111 11 11"
 CARGOTECH_PASSWORD="123-123"
-ENCRYPTION_KEY="<Fernet key>"
-CARGOTECH_TOKEN_CACHE_TTL="3300"
+CARGOTECH_TOKEN_CACHE_TTL="86400"  # optional
 
 # M5 (ЮKassa) — настраивается через admin panel (SystemSetting, encrypted)
-
-# Как получить ENCRYPTION_KEY:
-python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 ```
 
 ---

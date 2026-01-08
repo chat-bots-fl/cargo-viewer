@@ -23,7 +23,7 @@ P1: AUTHENTICATE_DRIVER
 
 P2: BROWSE_CARGOS
     ├─ Driver requests cargo list
-    ├─ Apply filters (city, weight_volume, type)
+    ├─ Apply filters (start/finish city, weight_volume, load/truck types)
     ├─ Call CargoTech API (server-side)
     ├─ Cache results (per-user, 5 min)
     └─ Return formatted list
@@ -31,7 +31,7 @@ P2: BROWSE_CARGOS
 P3: VIEW_CARGO_DETAIL
     ├─ Driver clicks on cargo
     ├─ Fetch full cargo data
-    ├─ Show extranote if present
+    ├─ Show comment (`data.extra.note`) if present
     ├─ Cache detail (15 min)
     └─ Return complete info
 
@@ -43,9 +43,9 @@ P4: RESPOND_TO_CARGO
 
 P5: MANAGE_API_CREDENTIALS (NEW!)
     ├─ Server-side login to CargoTech
-    ├─ Exchange phone+password → access_token
-    ├─ Store token securely (encrypted in DB)
-    ├─ Auto-refresh before expiry
+    ├─ Exchange phone+password → Bearer token
+    ├─ Store token in cache (Redis)
+    ├─ Re-login on 401 (invalidate cache)
     └─ Use token for all API requests
 
 P6: MANAGE_SUBSCRIPTION & PAYMENTS (M5)
@@ -65,7 +65,7 @@ C1: TELEGRAM_WEBAPP_CLIENT
 
 C2: CARGOTECH_API_SERVER
     ├─ phone + password (server-side login)
-    ├─ access_token (response)
+    ├─ token (response)
     └─ POST /v1/auth/login
 
 C3: TELEGRAM_BOT_WEBHOOK
@@ -82,11 +82,10 @@ C5: REDIS_CACHE
 
 C6: DATABASE
     ├─ Driver profiles
-    ├─ API credentials
     ├─ Responses history
     ├─ Payments + subscriptions
     ├─ Promo codes
-    ├─ Encrypted tokens / secret keys
+    ├─ Encrypted secret keys (ЮKassa, SystemSetting)
     └─ Audit log
 ```
 
@@ -139,6 +138,8 @@ PROJECT
     └── M5.6: Audit Logging
 ```
 
+Примечание: подмодули `M5.1–M5.6` реализуются как **6 Django приложений**: `payments/`, `subscriptions/`, `promocodes/`, `admin_panel/`, `feature_flags/`, `audit/`.
+
 **Infrastructure & Deployment (кросс‑секционно, вне PBS модулей M1‑M5):** `DEPLOY_GUIDE_v3.1.md`
 
 ---
@@ -148,6 +149,8 @@ PROJECT
 ## 📋 FR (Functional Requirements)
 
 ```
+ВСЕГО: 12 требований (FR-1…FR-12)
+
 FR-1: Аутентификация через Telegram
   ✅ Driver opens WebApp
   ✅ System validates Telegram initData (HMAC-SHA256)
@@ -164,7 +167,7 @@ FR-2: Список грузов (карточки)
   Contract: 2.1, 2.2, 2.3
 
 FR-3: Фильтрация по параметрам
-  ✅ Filter by: city, weight_volume (7 categories), cargo type
+  ✅ Filter by: start/finish city, weight_volume (7 categories), load/truck types
   ✅ Support multiple filters simultaneously
   ✅ Real-time search in autocomplete
   ✅ Save user preferences in cache
@@ -172,7 +175,7 @@ FR-3: Фильтрация по параметрам
 
 FR-4: Детальная карточка груза
   ✅ Show full cargo info
-  ✅ Include extranote (additional conditions)
+  ✅ Include comment from `data.extra.note` (detail endpoint only)
   ✅ Show shipper contact (if available)
   ✅ Display response status
   Contract: 2.1
@@ -233,6 +236,8 @@ FR-12: Аудит и журналирование (платежи/доступ)
 ## ⚡ NFR (Non-Functional Requirements)
 
 ```
+ВСЕГО: 17 требований (NFR-1.1…NFR-4.4)
+
 PERFORMANCE:
   NFR-1.1: Cargo list load < 2 sec (p95)
     └─ Solution: Per-user cache (5 min TTL)
@@ -244,7 +249,7 @@ PERFORMANCE:
     └─ Solution: Gunicorn (4 workers), Redis queue
   
   NFR-1.4: API login completion < 1 sec (server-side) ← NEW!
-    └─ Solution: Single API call + token cache (24 hours)
+    └─ Solution: Single API call + cached Bearer token (re-login on 401)
 
 USABILITY:
   NFR-2.1: Mobile-first design (responsive)
@@ -256,10 +261,10 @@ SECURITY:
   NFR-3.2: Validate Telegram initData (HMAC-SHA256)
     └─ Additional: max_age_seconds validation (300 sec)
   
-  NFR-3.3: Protect API tokens (encrypted in DB) ← CRITICAL!
-    └─ New: CargoTech credentials stored encrypted
-    └─ New: Token rotation on expiry
-    └─ New: Audit logging for all API calls
+  NFR-3.3: Protect CargoTech API token (treat as secret) ← CRITICAL!
+    └─ New: Credentials stored only in environment/secrets manager
+    └─ New: Token stored in cache (Redis) and never logged
+    └─ New: Audit logging for auth failures / abnormal re-logins
   
   NFR-3.4: CORS protection (restrict to app.cargotech.pro)
   NFR-3.5: Rate limiting (10 req/sec per user)
@@ -271,12 +276,12 @@ RELIABILITY:
   NFR-4.1: Uptime 99.9% (SLA)
   NFR-4.2: Graceful degradation if API down
   NFR-4.3: Data consistency (idempotent operations)
-  NFR-4.4: Automatic token refresh (before expiry)
+  NFR-4.4: Automatic re-login on 401 (token invalidation)
 ```
 
 ---
 
-# ЧАСТЬ 4: НОВЫЙ КОНТРАКТ - SERVER-SIDE API LOGIN
+# ЧАСТЬ 4: НОВЫЙ КОНТРАКТ - CARGOTECH API AUTH (BEARER TOKEN)
 
 ## 🔑 Contract 1.4: CargoTechAuthService.login() ← **НОВЫЙ**
 
@@ -289,16 +294,26 @@ WebApp server uses shared credentials to access API
 Token is stored and reused for all requests
 ```
 
+### ВАЖНО:
+
+Этот контракт описывает **реальный CargoTech API login** (запрос виден в HAR CargoTech WebApp).
+При server‑side интеграции запрос выполняется на сервере (Django/Celery), поэтому валидацию
+удобнее делать через серверные логи.
+
+Для валидации проверьте:
+- Серверные логи Django/Celery
+- Redis cache (ключ: `cargotech:api:token`, если используется)
+
 ### ДЕТАЛИ:
 
 ```
 Service: apps/integrations/cargotech_auth.py
 Module: CargoTechAuthService
 
-PUBLIC METHODS:
-  - login(phone: str, password: str) → access_token
-  - refresh_token(old_token: str) → new_token
-  - get_valid_token() → access_token (auto-refresh if expired)
+ PUBLIC METHODS:
+  - login(phone: str, password: str, remember: bool = True) → token
+  - get_token() → token (из cache или через login)
+  - invalidate_cached_token() → None
 ```
 
 ### PARAMETERS:
@@ -315,97 +330,84 @@ password: str
   ├─ @required: true
   ├─ @constraint: Must NOT be logged in code or git
   ├─ @constraint: Must be in environment variable
-  └─ @security: Store in encrypted Django settings
+  └─ @security: Store only in environment/secrets manager
 
 remember: bool (optional)
   ├─ Default: true
   ├─ Purpose: Keep session on device longer
-  └─ @client-only: Not used by server
+  └─ Passed to CargoTech API as-is
 ```
 
 ### RETURNS:
 
-```python
-{
-  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-  "token_type": "Bearer",
-  "expires_in": 3600,  # seconds (1 hour)
-  "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-  "driver_id": 12345,
-  "driver_name": "Иван Петров"
-}
+CargoTech API возвращает **opaque Bearer token** (Laravel Sanctum), структура ответа:
+
+```json
+{"data":{"token":"12345|<opaque_token>"}}
 ```
 
 ### WORKFLOW:
 
 ```
-1. Server starts (once per day/on token expiry)
-   └─ Call: login(phone=ENV['CARGOTECH_PHONE'], 
-                   password=ENV['CARGOTECH_PASSWORD'])
+1. Server requests token
+   └─ Try Redis cache first
+   └─ If missing → login(phone=ENV['CARGOTECH_PHONE'], password=ENV['CARGOTECH_PASSWORD'])
 
-2. CargoTech API responds with access_token
-   └─ Token stored in database (encrypted)
-   └─ TTL set to 55 minutes (refresh before 1 hour expiry)
+2. CargoTech API responds with token
+   └─ Cache token in Redis (TTL configurable, e.g. 24h)
 
 3. All subsequent requests use this token
-   └─ Header: Authorization: Bearer {access_token}
-   └─ No driver credentials needed
+   └─ Header: Authorization: Bearer {token}
 
-4. Before token expires:
-   └─ Automatic refresh_token() call
-   └─ New token stored, old one invalidated
-
-5. On error (401 Unauthorized):
-   └─ Retry login() once
+4. On error (401 Unauthorized)
+   └─ Invalidate cached token
+   └─ Re-login once and retry request once
    └─ If still fails → Log ERROR + Alert DevOps
-   └─ Driver sees: "Service temporarily unavailable"
 ```
 
 ### GUARANTEES:
 
 ```
-✅ Single source of truth: Server stores token
-✅ No driver exposure: Drivers never handle credentials
-✅ Automatic refresh: Token refreshed before expiry
-✅ Error handling: Retry + fallback to cached data
-✅ Security: Token stored encrypted, audit logged
-✅ Idempotent: Multiple login() calls safe
-✅ Rate limited: 1 login per day (unless error)
-✅ Monitored: All login attempts logged
+✅ Token format: Bearer (Laravel Sanctum), opaque string
+✅ No refresh_token/expires_in/token_type in response
+✅ Server-side: credentials only in environment/secrets manager
+✅ Token stored in cache (Redis) and never logged
+✅ Safe 401 handling: invalidate + re-login once + retry once
+✅ Idempotent: multiple login() calls safe (cache de-duplicates)
 ```
 
 ### CONSTRAINTS:
 
 ```
 @constraint: Phone and password are environment variables
-@constraint: Token never exposed to client
-@constraint: Auto-refresh before 1 hour expiry
-@constraint: If token invalid → full re-login (not 401 fallback)
-@constraint: Max 3 retries on network error
-@constraint: Encrypted storage with key rotation quarterly
-@constraint: Audit log all token refresh events
+@constraint: Token treated as secret (never log / never commit)
+@constraint: Token stored in cache (Redis) with TTL (default 24h) or until invalid
+@constraint: If token invalid (401) → invalidate cache → re-login once → retry once
+@constraint: Max 3 retries on network errors (with backoff)
 ```
 
 ### ERROR HANDLING:
 
 ```
-401 Unauthorized (invalid credentials)
-  └─ Action: Log ERROR, alert DevOps
-  └─ User sees: "System authentication failed (contact support)"
-  └─ Retry: Manual intervention required
+401 Unauthorized (token invalid/expired)
+  └─ Action: invalidate cached token → re-login once → retry request once
+  └─ If still fails: log ERROR + alert DevOps
 
 403 Forbidden (account suspended)
   └─ Action: Log CRITICAL, page on-call engineer
   └─ User sees: "Access denied (contact support)"
 
+422 Unprocessable Entity (login validation error)
+  └─ Action: log WARNING (no secrets) + alert DevOps
+  └─ Check: CARGOTECH_PHONE/CARGOTECH_PASSWORD
+
 429 Too Many Requests (rate limited by CargoTech)
   └─ Action: Wait and retry (exponential backoff)
-  └─ User sees: Service works (uses cached token)
+  └─ User sees: Service works (uses cached cargos)
 
 503 Service Unavailable
-  └─ Action: Use last valid token (if < 1 hour old)
-  └─ User sees: Service works (offline mode)
-  └─ Fallback: Cache all cargos from last 24 hours
+  └─ Action: retry later (backoff)
+  └─ Fallback: serve cached cargos (if available)
 ```
 
 ### IMPLEMENTATION (Python/Django):
@@ -413,246 +415,64 @@ remember: bool (optional)
 ```python
 # apps/integrations/cargotech_auth.py
 
-import os
-import requests
 import logging
-from datetime import datetime, timedelta
+from typing import Any
+
+import requests
 from django.conf import settings
 from django.core.cache import cache
-from cryptography.fernet import Fernet
-from apps.integrations.models import APIToken
 
-logger = logging.getLogger('cargotech_auth')
+logger = logging.getLogger(__name__)
+
+
+class CargoTechAuthError(RuntimeError):
+    pass
+
 
 class CargoTechAuthService:
-    API_URL = "https://api.cargotech.pro/v1/auth/login"
-    CACHE_KEY = "cargotech_access_token"
-    CACHE_TTL = 3300  # 55 minutes (refresh before 1 hour expiry)
-    
-    @staticmethod
-    def login(phone: str, password: str) -> dict:
-        """
-        Server-side login to CargoTech API
-        
-        Args:
-            phone: Driver phone in E.164 format (+7 XXXXXXXXXX)
-            password: Driver password
-        
-        Returns:
-            {
-                'access_token': str,
-                'token_type': 'Bearer',
-                'expires_in': 3600,
-                'refresh_token': str,
-                'driver_id': int,
-                'driver_name': str
-            }
-        
-        Raises:
-            AuthenticationError: If credentials invalid
-            APIError: If network/server error
-        """
-        payload = {
-            "phone": phone,
-            "password": password,
-            "remember": True
-        }
-        
-        headers = {
-            "Content-Type": "application/json",
-            "User-Agent": "CargoTechDriverWebApp/3.0"
-        }
-        
-        try:
-            logger.info(f"Attempting login for phone {phone}")
-            
-            response = requests.post(
-                CargoTechAuthService.API_URL,
-                json=payload,
-                headers=headers,
-                timeout=10
-            )
-            
-            if response.status_code == 200:
-                data = response.json()
-                
-                # Store token in database (encrypted)
-                CargoTechAuthService._store_token(
-                    access_token=data['access_token'],
-                    refresh_token=data.get('refresh_token'),
-                    expires_in=data.get('expires_in', 3600),
-                    driver_id=data.get('driver_id')
-                )
-                
-                # Also cache for quick access
-                cache.set(
-                    CargoTechAuthService.CACHE_KEY,
-                    data['access_token'],
-                    timeout=CargoTechAuthService.CACHE_TTL
-                )
-                
-                logger.info(f"Login successful for phone {phone}")
-                return data
-            
-            elif response.status_code == 401:
-                logger.error(f"Invalid credentials for phone {phone}")
-                raise AuthenticationError("Invalid phone or password")
-            
-            elif response.status_code == 403:
-                logger.critical(f"Account forbidden for phone {phone}")
-                raise AuthenticationError("Account suspended or inactive")
-            
-            elif response.status_code == 429:
-                logger.warning("Rate limited by CargoTech API")
-                raise RateLimitError("Too many login attempts")
-            
-            else:
-                logger.error(f"Unexpected status {response.status_code}")
-                raise APIError(f"API error: {response.status_code}")
-        
-        except requests.Timeout:
-            logger.error("CargoTech API timeout")
-            raise APIError("Connection timeout")
-        
-        except requests.RequestException as e:
-            logger.error(f"Request failed: {str(e)}")
-            raise APIError(f"Network error: {str(e)}")
-    
-    @staticmethod
-    def get_valid_token() -> str:
-        """
-        Get valid access token, refresh if needed
-        
-        Auto-refreshes before 1 hour expiry
-        Retries login once if refresh fails
-        
-        Returns:
-            access_token: Valid Bearer token
-        
-        Raises:
-            AuthenticationError: If cannot obtain valid token
-        """
-        # Try cache first
-        token = cache.get(CargoTechAuthService.CACHE_KEY)
-        if token:
-            logger.debug("Token from cache")
-            return token
-        
-        # Try database
-        try:
-            api_token = APIToken.objects.latest('created_at')
-            
-            # Check if still valid (< 1 hour old)
-            age = (datetime.now() - api_token.created_at).total_seconds()
-            if age < 3600:
-                logger.debug("Token from database (valid)")
-                cache.set(
-                    CargoTechAuthService.CACHE_KEY,
-                    api_token.access_token,
-                    timeout=3300
-                )
-                return api_token.access_token
-            
-            # Token expired, refresh it
-            logger.info("Token expired, attempting refresh")
-            new_token = CargoTechAuthService.refresh_token(
-                api_token.refresh_token
-            )
-            return new_token
-        
-        except APIToken.DoesNotExist:
-            logger.warning("No token in database, performing login")
-            
-            # Get credentials from environment
-            phone = os.environ.get('CARGOTECH_PHONE')
-            password = os.environ.get('CARGOTECH_PASSWORD')
-            
-            if not phone or not password:
-                raise AuthenticationError("CargoTech credentials not configured")
-            
-            result = CargoTechAuthService.login(phone, password)
-            return result['access_token']
-    
-    @staticmethod
-    def refresh_token(refresh_token: str) -> str:
-        """
-        Refresh expired access token
-        
-        Args:
-            refresh_token: Previous refresh token
-        
-        Returns:
-            new_access_token: Fresh Bearer token
-        """
-        payload = {"refresh_token": refresh_token}
-        
-        try:
-            logger.info("Refreshing access token")
-            
-            response = requests.post(
-                "https://api.cargotech.pro/v1/auth/refresh",
-                json=payload,
-                timeout=10
-            )
-            
-            if response.status_code == 200:
-                data = response.json()
-                new_token = data['access_token']
-                
-                # Update database
-                CargoTechAuthService._store_token(
-                    access_token=new_token,
-                    refresh_token=data.get('refresh_token'),
-                    expires_in=data.get('expires_in', 3600),
-                    driver_id=data.get('driver_id')
-                )
-                
-                logger.info("Token refreshed successfully")
-                return new_token
-            else:
-                logger.error(f"Refresh failed with status {response.status_code}")
-                raise AuthenticationError("Cannot refresh token")
-        
-        except Exception as e:
-            logger.error(f"Refresh error: {str(e)}")
-            raise
-    
-    @staticmethod
-    def _store_token(access_token: str, refresh_token: str, 
-                     expires_in: int, driver_id: int):
-        """Store token in database (encrypted)"""
-        cipher = Fernet(settings.ENCRYPTION_KEY)
-        encrypted_token = cipher.encrypt(access_token.encode())
-        
-        APIToken.objects.create(
-            access_token=encrypted_token,
-            refresh_token=encrypted_token,  # Also encrypt refresh token
-            expires_at=datetime.now() + timedelta(seconds=expires_in),
-            driver_id=driver_id
+    BASE_URL = "https://api.cargotech.pro"
+    CACHE_KEY = "cargotech:api:token"
+    DEFAULT_CACHE_TTL = 86400  # 24h (token has no expires_in)
+
+    @classmethod
+    def login(cls, phone: str, password: str, remember: bool = True) -> str:
+        response = requests.post(
+            f"{cls.BASE_URL}/v1/auth/login",
+            json={"phone": phone, "password": password, "remember": remember},
+            timeout=10,
         )
-        
-        logger.info(f"Token stored for driver {driver_id}")
+        response.raise_for_status()
 
+        payload: dict[str, Any] = response.json()
+        token = payload["data"]["token"]
 
-# apps/integrations/models.py
+        cache_ttl = getattr(settings, "CARGOTECH_TOKEN_CACHE_TTL", cls.DEFAULT_CACHE_TTL)
+        cache.set(cls.CACHE_KEY, token, timeout=cache_ttl)
+        return token
 
-from django.db import models
-from django.utils import timezone
+    @classmethod
+    def get_token(cls) -> str:
+        cached = cache.get(cls.CACHE_KEY)
+        if cached:
+            return cached
 
-class APIToken(models.Model):
-    """Encrypted CargoTech API tokens"""
-    
-    access_token = models.TextField()  # Encrypted
-    refresh_token = models.TextField()  # Encrypted
-    driver_id = models.IntegerField()
-    expires_at = models.DateTimeField()
-    created_at = models.DateTimeField(auto_now_add=True)
-    
-    class Meta:
-        ordering = ['-created_at']
-    
-    def is_valid(self):
-        return timezone.now() < self.expires_at
+        phone = settings.CARGOTECH_PHONE
+        password = settings.CARGOTECH_PASSWORD
+        if not phone or not password:
+            raise CargoTechAuthError("CargoTech credentials not configured")
+
+        return cls.login(phone=phone, password=password, remember=True)
+
+    @classmethod
+    def invalidate_cached_token(cls) -> None:
+        cache.delete(cls.CACHE_KEY)
+
+    @classmethod
+    def auth_headers(cls) -> dict[str, str]:
+        return {
+            "Authorization": f"Bearer {cls.get_token()}",
+            "Accept": "application/json",
+        }
 ```
 
 ### DJANGO SETTINGS:
@@ -661,7 +481,6 @@ class APIToken(models.Model):
 # settings.py
 
 import os
-from cryptography.fernet import Fernet
 
 # CargoTech API Credentials (ENVIRONMENT ONLY!)
 CARGOTECH_PHONE = os.environ.get('CARGOTECH_PHONE')
@@ -673,14 +492,8 @@ if not CARGOTECH_PHONE or not CARGOTECH_PASSWORD:
         "in environment variables"
     )
 
-# Encryption key for token storage
-ENCRYPTION_KEY = os.environ.get(
-    'ENCRYPTION_KEY',
-    Fernet.generate_key()  # Generate if not set
-)
-
-# Token cache timeout (55 minutes, refresh before 1 hour expiry)
-CARGOTECH_TOKEN_CACHE_TTL = 3300
+# Optional: token cache timeout (seconds)
+CARGOTECH_TOKEN_CACHE_TTL = int(os.environ.get('CARGOTECH_TOKEN_CACHE_TTL', '86400'))
 
 # Logging
 LOGGING = {
@@ -708,40 +521,44 @@ LOGGING = {
 # apps/integrations/monitoring.py
 
 from django.core.mail import send_mail
-from apps.integrations.models import APIToken
 import logging
+
+import requests
+
+from apps.integrations.cargotech_auth import CargoTechAuthService
 
 logger = logging.getLogger('cargotech_auth')
 
-class TokenMonitor:
+class CargoTechAuthMonitor:
     @staticmethod
-    def check_token_health():
+    def check_token_health() -> bool:
         """
-        Daily check: is token valid? Will it expire soon?
+        Daily check: does cached token still work?
         """
         try:
-            token = APIToken.objects.latest('created_at')
-            
-            if not token.is_valid():
-                logger.critical("API token INVALID - refresh failed!")
-                TokenMonitor._alert_devops("Token is invalid")
+            response = requests.get(
+                "https://api.cargotech.pro/v1/me",
+                headers=CargoTechAuthService.auth_headers(),
+                timeout=10,
+            )
+            if response.status_code == 401:
+                CargoTechAuthService.invalidate_cached_token()
+                response = requests.get(
+                    "https://api.cargotech.pro/v1/me",
+                    headers=CargoTechAuthService.auth_headers(),
+                    timeout=10,
+                )
+            if response.status_code != 200:
+                logger.error("CargoTech auth health check failed: status=%s", response.status_code)
+                CargoTechAuthMonitor._alert_devops(
+                    f"CargoTech auth health check failed: status={response.status_code}"
+                )
                 return False
-            
-            # Check if expiring soon (< 10 minutes)
-            from django.utils import timezone
-            from datetime import timedelta
-            
-            if token.expires_at < timezone.now() + timedelta(minutes=10):
-                logger.warning("Token expiring soon, refreshing...")
-                # Trigger refresh
-                from apps.integrations.cargotech_auth import CargoTechAuthService
-                CargoTechAuthService.refresh_token(token.refresh_token)
-            
             return True
-        
+
         except Exception as e:
-            logger.error(f"Health check failed: {str(e)}")
-            TokenMonitor._alert_devops(f"Token health check failed: {e}")
+            logger.exception("CargoTech auth health check failed")
+            CargoTechAuthMonitor._alert_devops(f"CargoTech auth health check exception: {e}")
             return False
     
     @staticmethod
@@ -760,11 +577,11 @@ class TokenMonitor:
 
 from celery import shared_task
 
-@shared_task(name='check_cargotech_token')
-def check_cargotech_token():
-    """Check CargoTech API token health daily"""
-    from apps.integrations.monitoring import TokenMonitor
-    return TokenMonitor.check_token_health()
+@shared_task(name='check_cargotech_auth')
+def check_cargotech_auth():
+    """Check CargoTech API auth health daily"""
+    from apps.integrations.monitoring import CargoTechAuthMonitor
+    return CargoTechAuthMonitor.check_token_health()
 ```
 
 ---
@@ -861,30 +678,31 @@ def validate_session(session_token: str) → driver_data:
 
 ### Contract 1.4: CargoTechAuthService.login() ← **NEW**
 
+**ВАЖНО**: CargoTech API авторизуется через Bearer Token (Laravel Sanctum). Запрос `/v1/auth/login`
+виден в HAR CargoTech WebApp; при server‑side интеграции проверяйте серверные логи.
+
+Для валидации проверьте:
+- Серверные логи Django/Celery
+- Redis cache (ключ: `cargotech:api:token`)
+
 ```python
-def login(phone: str, password: str) → response:
+def login(phone: str, password: str, remember: bool = True) → token:
     """
     Server-side login to CargoTech API
     
     PARAMETERS:
     - phone: "+7 911 111 11 11" (E.164 format)
     - password: "123-123"
+    - remember: true/false
     
     RETURNS:
-    {
-        'access_token': 'eyJ...',
-        'token_type': 'Bearer',
-        'expires_in': 3600,
-        'refresh_token': 'eyJ...',
-        'driver_id': 12345,
-        'driver_name': 'Иван Петров'
-    }
+    {"data": {"token": "12345|<opaque_token>"}}
     
     GUARANTEES:
-    ✅ Single server-side login (not per-driver)
-    ✅ Token stored encrypted in database
-    ✅ Token cached (55 min) for quick access
-    ✅ Auto-refresh before 1 hour expiry
+    ✅ Token is Bearer (Sanctum), opaque string (not JWT)
+    ✅ No refresh_token / expires_in / token_type in response
+    ✅ Token stored in cache (Redis) for reuse
+    ✅ 401 handling: invalidate cached token → re-login once → retry once
     ✅ Retry logic with exponential backoff
     ✅ Audit log all login attempts
     ✅ Alert DevOps if login fails
@@ -902,7 +720,7 @@ def fetch_cargos(filters: dict, user_id: int) → cargo_list:
     Fetch cargo list from CargoTech API
     
     PARAMETERS:
-    - filters: {city, weight_volume, type}
+    - filters: {start_point_id, finish_point_id, start_point_radius, finish_point_radius, start_date, mode, weight_volume, load_types, truck_types}
     - user_id: Driver Telegram ID
     
     RETURNS:
@@ -915,11 +733,28 @@ def fetch_cargos(filters: dict, user_id: int) → cargo_list:
             'pickup_city': 'Москва',
             'delivery_city': 'СПб',
             'price_rub': 50000,
-            'extranote': 'Требуется рефриж, ДОПОГ',
             'shipper_contact': '+7 999 888 77 66'
         },
         ...
     ]
+
+    NOTE:
+    - Cargo list endpoint `/v2/cargos/views` does NOT include comment.
+    - Comment is available only in detail endpoint:
+      `GET /v1/carrier/cargos/{cargo_id}?source=1&include=contacts`
+      and lives at `data.extra.note`.
+
+    EXTRA (detail response, 10 fields):
+    - note: str (comment text)
+    - external_inn: str | null
+    - custom_cargo_type: str | null
+    - integrate: object | null
+    - is_delete_from_archive: bool
+    - krugoreis: bool
+    - partial_load: bool
+    - note_valid: bool
+    - integrate_contacts: object | null
+    - url: str | null
     
     GUARANTEES:
     ✅ Use server-side CargoTech API token (Contract 1.4)
@@ -927,7 +762,7 @@ def fetch_cargos(filters: dict, user_id: int) → cargo_list:
     ✅ Per-user cache (5 min TTL)
     ✅ Exponential retry on 429/503
     ✅ Circuit breaker if API down (serve cache)
-    ✅ Include extranote field (new in v3.0)
+    ✅ Detail comment extracted from `data.extra.note` (detail endpoint only)
     ✅ Format for mobile (responsive)
     
     CONTRACT: Contract 2.1 (updated)
@@ -950,7 +785,7 @@ def format_cargo_card(cargo: dict) → html:
     GUARANTEES:
     ✅ Mobile-responsive layout
     ✅ Touch-friendly (min 44x44px buttons)
-    ✅ Show extranote if present (monospace)
+    ✅ Show comment from `data.extra.note` if present
     ✅ Price formatted with currency symbol
     ✅ Route formatted as "City A → City B"
     
@@ -967,7 +802,7 @@ def get_cargos(user_id: int, filters: dict) → cargo_list:
     
     PARAMETERS:
     - user_id: Driver Telegram ID
-    - filters: {city, weight_volume, type}
+    - filters: {start_point_id, finish_point_id, start_point_radius, finish_point_radius, start_date, mode, weight_volume, load_types, truck_types}
     
     RETURNS:
     [cargo, cargo, ...]
@@ -994,7 +829,7 @@ def get_cargos(user_id: int, filters: dict) → cargo_list:
     
     FALLBACK STRATEGY:
     - Redis down → Direct API call (no cache)
-    - API down → Serve stale cache (< 1 hour) + warning
+    - API down → Serve cached data (if available) + warning
     - Cache miss → Fetch + async update
     
     GUARANTEES:
@@ -1017,9 +852,15 @@ def validate_filters(filters: dict) → validated:
     
     PARAMETERS:
     filters: {
-        'city': 'Москва',
-        'weight_volume': '1_3',  # 7 categories
-        'cargo_type': 'cargo'
+        'start_point_id': 62,          # город загрузки (ID)
+        'finish_point_id': 39,         # город выгрузки (ID)
+        'start_point_radius': 50,      # км
+        'finish_point_radius': 50,     # км
+        'start_date': '2026-01-01',    # YYYY-MM-DD
+        'mode': 'my',                  # my/all
+        'weight_volume': '15_20',      # frontend: 7 categories
+        'load_types': 3,               # optional
+        'truck_types': 4               # optional
     }
     
     WEIGHT_VOLUME CATEGORIES (7):
@@ -1027,9 +868,19 @@ def validate_filters(filters: dict) → validated:
     - "3_5": 3-5 т / 15-25 м³
     - "5_10": 5-10 т / 25-40 м³
     - "10_15": 10-15 т / 40-60 м³
-    - "15_20": 15-20 т / 60-82 м³
+    - "15_20": 15-20 т / 60-65 м³
     - "20": 20+ т / 82+ м³
     - "any": No filter
+
+    API FORMAT (actual CargoTech query param):
+    - filter[wv]: "<weight_t>-<volume_m3>" (example: "15-65")
+      mapping:
+      - 1_3   -> "1-15"
+      - 3_5   -> "3-25"
+      - 5_10  -> "5-40"
+      - 10_15 -> "10-60"
+      - 15_20 -> "15-65"  # matches HAR: filter[wv]=15-65
+      - 20    -> "20-999"
     
     RETURNS:
     {'valid': True, 'errors': []}  or
@@ -1053,19 +904,27 @@ def build_query(filters: dict) → api_params:
     Build CargoTech API query from filters
     
     PARAMETERS:
-    filters: {city, weight_volume, cargo_type}
+    filters: {start_point_id, finish_point_id, start_date, mode, weight_volume, load_types, truck_types}
     
     RETURNS:
     {
-        'filter[city]': 'Москва',
-        'filter[weight]': {'min': 1000, 'max': 3000},
-        'filter[volume]': {'min': 0, 'max': 15},
-        'filter[type]': 'cargo'
+        'filter[start_point_id]': 62,
+        'filter[finish_point_id]': 39,
+        'filter[start_point_radius]': 50,
+        'filter[finish_point_radius]': 50,
+        'filter[start_date]': '2026-01-01',
+        'filter[mode]': 'my',
+        'filter[wv]': '15-65',
+        'filter[load_types]': 3,
+        'filter[truck_types]': 4,
+        'include': 'contacts',
+        'limit': 20,
+        'offset': 0
     }
     
     GUARANTEES:
-    ✅ Map weight_volume categories to kg/m³
-    ✅ Normalize city names
+    ✅ Map weight_volume categories to filter[wv] format
+    ✅ Pass-through/validate known CargoTech query params
     ✅ Handle missing/optional filters
     ✅ No SQL injection
     
@@ -1147,24 +1006,21 @@ Accept: application/json
 
 RESPONSE (200 OK):
 {
-  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-  "token_type": "Bearer",
-  "expires_in": 3600,
-  "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-  "driver_id": 12345,
-  "driver_name": "Иван Петров"
+  "data": {
+    "token": "12345|<opaque_token>"
+  }
 }
 
 ERROR RESPONSES:
-401 Unauthorized: {"error": "Invalid phone or password"}
+422 Unprocessable Entity: {"errors": {...}}
 403 Forbidden: {"error": "Account suspended"}
 429 Too Many Requests: {"error": "Rate limit exceeded"}
 503 Service Unavailable: {"error": "Service temporarily unavailable"}
 
 SECURITY:
 - Credentials from environment (not hardcoded)
-- Token encrypted in database
-- Auto-refresh before expiry
+- Token is opaque Bearer (Sanctum); treat as secret
+- Store token in cache (server-side) or localStorage (client-side)
 - Audit log all attempts
 ```
 
@@ -1172,8 +1028,8 @@ SECURITY:
 
 ```
 REQUEST:
-GET https://api.cargotech.pro/v2/cargos/views?limit=20&filter[weight_volume]=1_3
-Authorization: Bearer {access_token}
+GET https://api.cargotech.pro/v2/cargos/views?limit=20&offset=0&include=contacts&filter[start_point_id]=62&filter[finish_point_id]=39&filter[start_point_radius]=50&filter[finish_point_radius]=50&filter[start_date]=2026-01-01&filter[mode]=my&filter[wv]=15-65
+Authorization: Bearer {token}
 
 RESPONSE (200 OK):
 {
@@ -1186,7 +1042,6 @@ RESPONSE (200 OK):
       "pickup_city": "Москва",
       "delivery_city": "СПб",
       "price": 50000,
-      "extranote": "Требуется рефриж, ДОПОГ",
       "shipper_contact": "+7 999 888 77 66"
     }
   ],
@@ -1196,9 +1051,20 @@ RESPONSE (200 OK):
 }
 
 FILTERS:
-- filter[weight_volume]: "1_3", "3_5", "5_10", "10_15", "15_20", "20", "any"
-- filter[pickup_city]: "Москва"
-- filter[cargo_type]: "cargo"
+- filter[start_point_id]: 62
+- filter[finish_point_id]: 39
+- filter[start_point_radius]: 50
+- filter[finish_point_radius]: 50
+- filter[start_date]: "2026-01-01"
+- filter[mode]: "my" | "all"
+- filter[wv]: "15-65" (weight/volume, see Contract 3.1 mapping)
+- filter[load_types]: 3
+- filter[truck_types]: 4
+
+OTHER:
+- include: "contacts"
+- limit: 20
+- offset: 0
 
 RATE LIMITING:
 - Limit: 600 requests per minute (global)
@@ -1206,29 +1072,42 @@ RATE LIMITING:
 - On 429: Retry after X-RateLimit-Reset-After
 ```
 
-### Endpoint 3: GET /v2/cargos/views/{id} (Get cargo detail)
+### Endpoint 3: GET /v1/carrier/cargos/{cargo_id} (Get cargo detail)
 
 ```
 REQUEST:
-GET https://api.cargotech.pro/v2/cargos/views/12345
-Authorization: Bearer {access_token}
+GET https://api.cargotech.pro/v1/carrier/cargos/12345?source=1&include=contacts
+Authorization: Bearer {token}
 
 RESPONSE (200 OK):
 {
-  "id": "12345",
-  "title": "Доставка посылок",
-  "weight": 5000,
-  "volume": 25,
-  "pickup_city": "Москва",
-  "delivery_city": "СПб",
-  "pickup_address": "ул. Красная площадь, 1",
-  "delivery_address": "Невский проспект, 25",
-  "price": 50000,
-  "extranote": "Требуется рефриж, ДОПОГ, только ИП",
-  "shipper_name": "ООО Логистика",
-  "shipper_contact": "+7 999 888 77 66",
-  "cargo_type": "cargo",
-  "created_at": "2026-01-03T10:00:00Z"
+  "data": {
+    "id": "12345",
+    "title": "Доставка посылок",
+    "weight": 5000,
+    "volume": 25,
+    "pickup_city": "Москва",
+    "delivery_city": "СПб",
+    "pickup_address": "ул. Красная площадь, 1",
+    "delivery_address": "Невский проспект, 25",
+    "price": 50000,
+    "extra": {
+      "note": "По ставке без НДС возможна заправка нашими топливными картами со скидкой от 15% до 25%.",
+      "external_inn": null,
+      "custom_cargo_type": null,
+      "integrate": null,
+      "is_delete_from_archive": false,
+      "krugoreis": false,
+      "partial_load": false,
+      "note_valid": true,
+      "integrate_contacts": null,
+      "url": "https://cargomart.ru/orders/active?modal=..."
+    },
+    "shipper_name": "ООО Логистика",
+    "shipper_contact": "+7 999 888 77 66",
+    "cargo_type": "cargo",
+    "created_at": "2026-01-03T10:00:00Z"
+  }
 }
 
 PERFORMANCE:
@@ -1262,10 +1141,9 @@ cargotech_driver_app/
 │   │   └── tests.py
 │   │
 │   ├── integrations/
-│   │   ├── models.py (APIToken ← NEW!)
 │   │   ├── cargotech_auth.py (CargoTechAuthService ← NEW!)
 │   │   ├── cargotech_client.py (CargoAPIClient)
-│   │   ├── monitoring.py (TokenMonitor ← NEW!)
+│   │   ├── monitoring.py (CargoTechAuthMonitor, optional)
 │   │   ├── tasks.py (Celery tasks)
 │   │   └── tests.py
 │   │
@@ -1315,7 +1193,7 @@ cargotech_driver_app/
     ├── TELEGRAM_BOT_TOKEN=***
     ├── CARGOTECH_PHONE=+7 911 111 11 11 ← NEW!
     ├── CARGOTECH_PASSWORD=123-123 ← NEW!
-    ├── ENCRYPTION_KEY=*** ← NEW!
+    ├── CARGOTECH_TOKEN_CACHE_TTL=86400 (optional)
     ├── REDIS_URL=redis://localhost:6379/0
     └── DATABASE_URL=postgresql://...
 ```
@@ -1331,19 +1209,19 @@ cargotech_driver_app/
 ### ДЕНЬ 1-2: M1 Authentication + NEW Login
 
 ```
-✅ Django models: DriverProfile, TelegramSession, APIToken
+✅ Django models: DriverProfile, TelegramSession
 ✅ TelegramAuthService.validate_init_data() + max_age
 ✅ SessionService.create_session() + Redis
 ✅ TokenService.validate_session()
 ✅ CargoTechAuthService.login() ← NEW!
-✅ TokenMonitor + Celery task ← NEW!
+✅ CargoTech auth health check (optional)
 ✅ Environment variables setup
 ✅ Unit tests for all auth contracts
 
 Metrics:
 - ✅ All 4 contracts working (1.1-1.4)
-- ✅ Token encrypted in DB
-- ✅ Auto-refresh before 1 hour
+- ✅ Token cached in Redis (no DB)
+- ✅ 401 handling: re-login + retry
 - ✅ 0 security warnings
 ```
 
@@ -1386,7 +1264,7 @@ Metrics:
 
 ```
 ✅ CargoListView (HTMX pagination)
-✅ CargoDetailView (with extranote)
+✅ CargoDetailView (with comment `data.extra.note`)
 ✅ HTML templates (mobile-responsive)
 ✅ Loading spinners
 ✅ Fallback to cached data
@@ -1589,8 +1467,7 @@ cp .env.example .env
 # Edit .env with your values:
 # CARGOTECH_PHONE=+7 911 111 11 11
 # CARGOTECH_PASSWORD=123-123
-# ENCRYPTION_KEY=<generate with Fernet>
-# CARGOTECH_TOKEN_CACHE_TTL=3300
+# CARGOTECH_TOKEN_CACHE_TTL=86400 (optional)
 
 # Run migrations
 python manage.py migrate
@@ -1660,9 +1537,9 @@ coverage report
 - [ ] All tests passing (> 90% coverage)
 - [ ] Security audit completed (0 High vulnerabilities)
 - [ ] Load test successful (1000+ concurrent)
-- [ ] Token encryption working
+- [ ] Token storage verified (cache/localStorage, no secrets in logs)
 - [ ] CargoTech API login working
-- [ ] Token auto-refresh verified
+- [ ] 401 handling verified (invalidate token → re-login → retry)
 - [ ] Monitoring & alerting configured
 - [ ] Backup strategy in place
 - [ ] Disaster recovery tested

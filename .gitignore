@@ -1,0 +1,2 @@
+# Local HAR captures may contain tokens/PII; keep them out of git history.
+docs/har/
