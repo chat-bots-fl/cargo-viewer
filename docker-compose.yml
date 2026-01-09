@@ -1,0 +1,47 @@
+version: "3.9"
+
+# ============================================
+# CDN Setup Instructions
+# ============================================
+# To enable CDN for static files:
+#
+# 1. Set CDN environment variables in .env:
+#    CDN_ENABLED=True
+#    CDN_URL=https://cdn.yourdomain.com
+#    CDN_STATIC_PREFIX=static
+#
+# 2. For Cloudflare R2:
+#    CLOUDFLARE_ACCOUNT_ID=your_account_id
+#    CLOUDFLARE_R2_BUCKET=your_bucket_name
+#    CLOUDFLARE_R2_ACCESS_KEY_ID=your_access_key
+#    CLOUDFLARE_R2_SECRET_ACCESS_KEY=your_secret_key
+#
+# 3. For AWS CloudFront:
+#    AWS_ACCESS_KEY_ID=your_access_key
+#    AWS_SECRET_ACCESS_KEY=your_secret_key
+#    AWS_S3_BUCKET=your_bucket_name
+#    AWS_REGION=us-east-1
+#
+# 4. Upload static files to CDN:
+#    python manage.py upload_static_to_cdn --provider cloudflare
+#    or
+#    python manage.py upload_static_to_cdn --provider aws
+#
+# 5. Test with dry run first:
+#    python manage.py upload_static_to_cdn --provider cloudflare --dry-run
+#
+# See docs/CDN_SETUP.md for detailed instructions.
+# ============================================
+
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+
+volumes:
+  redis_data:
+

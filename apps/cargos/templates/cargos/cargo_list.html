@@ -1,0 +1,21 @@
+<div id="cargo-cards">
+  {% for cargo in cards %}
+    {% include "cargos/components/cargo_card.html" with cargo=cargo %}
+  {% empty %}
+    <div class="muted">Нет данных.</div>
+  {% endfor %}
+</div>
+
+<div id="load-more">
+  {% if next_offset %}
+    <button
+      class="btn btn-secondary"
+      hx-get="/api/cargos/?{% if base_query %}{{ base_query }}&{% endif %}limit={{ limit }}&offset={{ next_offset }}"
+      hx-target="#cargo-cards"
+      hx-swap="beforeend"
+    >
+      Ещё
+    </button>
+  {% endif %}
+</div>
+

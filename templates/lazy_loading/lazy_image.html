@@ -1,0 +1,31 @@
+{% load static %}
+{% if enabled %}
+  <img
+    src="{{ placeholder }}"
+    data-src="{{ src }}"
+    {% if srcset %}data-srcset="{{ srcset }}"{% endif %}
+    {% if sizes %}data-sizes="{{ sizes }}"{% endif %}
+    class="{{ class }}"
+    alt="{{ alt }}"
+    loading="{{ loading }}"
+    {% for key, value in attrs.items %}
+      {% if key != 'class' and key != 'alt' and key != 'loading' %}
+        {{ key }}="{{ value }}"
+      {% endif %}
+    {% endfor %}
+  />
+{% else %}
+  <img
+    src="{{ src }}"
+    {% if srcset %}srcset="{{ srcset }}"{% endif %}
+    {% if sizes %}sizes="{{ sizes }}"{% endif %}
+    class="{{ class }}"
+    alt="{{ alt }}"
+    loading="{{ loading }}"
+    {% for key, value in attrs.items %}
+      {% if key != 'class' and key != 'alt' and key != 'loading' %}
+        {{ key }}="{{ value }}"
+      {% endif %}
+    {% endfor %}
+  />
+{% endif %}

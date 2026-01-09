@@ -1,0 +1,26 @@
+{% extends "admin_panel/base.html" %}
+{% block body %}
+  <section class="card">
+    <div class="card-title">Настройки</div>
+    {% if error %}<div class="muted">Ошибка: {{ error }}</div>{% endif %}
+    <form method="post">
+      {% csrf_token %}
+      <label><input type="checkbox" name="payments_enabled" {% if payments_enabled %}checked{% endif %} /> payments_enabled</label>
+      <div class="actions" style="margin-top:10px;">
+        <button class="btn" type="submit">Сохранить</button>
+      </div>
+    </form>
+  </section>
+
+  <section class="card">
+    <div class="card-title">Feature Flags</div>
+    <ul>
+      {% for f in flags %}
+        <li><span class="pill">{{ f.key }}</span> {{ f.enabled }}</li>
+      {% empty %}
+        <li class="muted">Нет флагов</li>
+      {% endfor %}
+    </ul>
+  </section>
+{% endblock %}
+

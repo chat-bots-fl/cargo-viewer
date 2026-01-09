@@ -1,0 +1,28 @@
+[tool.black]
+line-length = 100
+target-version = ['py311']
+include = '\.pyi?$'
+exclude = '''
+/(
+    \.git
+  | \.venv
+  | venv
+  | env
+  | build
+  | dist
+  | \.eggs
+  | \.tox
+  | \.mypy_cache
+  | \.pytest_cache
+  | htmlcov
+  | \.coverage
+  | migrations
+  | node_modules
+  | staticfiles
+  | mediafiles
+  | \.idea
+  | \.vscode
+)/
+'''
+skip-string-normalization = false
+skip-magic-trailing-comma = false

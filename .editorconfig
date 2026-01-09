@@ -1,0 +1,50 @@
+# EditorConfig configuration for cargo-viewer project
+# See https://editorconfig.org for more information
+
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.{py,rst,md}]
+indent_style = space
+indent_size = 4
+
+[*.{yml,yaml}]
+indent_style = space
+indent_size = 2
+
+[*.{json,js,ts,jsx,tsx,css,scss,html}]
+indent_style = space
+indent_size = 2
+
+[Makefile]
+indent_style = tab
+
+[*.{bat,cmd}]
+end_of_line = crlf
+
+[.gitignore]
+indent_size = unset
+
+[.flake8]
+indent_size = unset
+
+[mypy.ini]
+indent_size = unset
+
+[.black]
+indent_size = unset
+
+[.isort]
+indent_size = unset
+
+[.pre-commit-config.yaml]
+indent_size = unset
+
+[*.{svg,png,jpg,jpeg,gif,ico}]
+insert_final_newline = false
+trim_trailing_whitespace = false

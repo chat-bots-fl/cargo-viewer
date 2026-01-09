@@ -1,0 +1,14 @@
+{% extends "admin_panel/base.html" %}
+{% block body %}
+  <section class="card">
+    <div class="card-title">Навигация</div>
+    <ul>
+      <li><a class="link" href="{% url 'admin_panel_payments' %}">Платежи</a></li>
+      <li><a class="link" href="{% url 'admin_panel_subscriptions' %}">Подписки</a></li>
+      <li><a class="link" href="{% url 'admin_panel_promocodes' %}">Промокоды</a></li>
+      <li><a class="link" href="{% url 'admin_panel_settings' %}">Настройки</a></li>
+      <li><a class="link" href="{% url 'admin_panel_audit_log' %}">Audit log</a></li>
+    </ul>
+  </section>
+{% endblock %}
+

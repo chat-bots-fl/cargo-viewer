@@ -1,0 +1,55 @@
+<div style="display:grid;gap:10px;">
+  <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;">
+    <div>
+      <div style="font-weight:800;font-size:18px;">{{ cargo.route }}</div>
+      <div class="muted">ID: {{ cargo.id }}</div>
+    </div>
+    <div class="cargo-price" style="font-size:18px;">{{ cargo.price }}</div>
+  </div>
+
+  <div class="card" style="padding:10px;">
+    <div class="muted" style="margin-bottom:6px;">Маршрут</div>
+    <div style="display:grid;gap:6px;">
+      <div><strong>Погрузка:</strong> {{ cargo.start.city }}{% if cargo.start.address %}, {{ cargo.start.address }}{% endif %}{% if cargo.start.date %} ({{ cargo.start.date }}){% endif %}</div>
+      <div><strong>Выгрузка:</strong> {{ cargo.finish.city }}{% if cargo.finish.address %}, {{ cargo.finish.address }}{% endif %}{% if cargo.finish.date %} ({{ cargo.finish.date }}){% endif %}</div>
+    </div>
+  </div>
+
+  {% if cargo.comment %}
+    <div class="card" style="padding:10px;">
+      <div class="muted" style="margin-bottom:6px;">Комментарий</div>
+      <div>{{ cargo.comment }}</div>
+    </div>
+  {% endif %}
+
+  {% if cargo.shipper.name %}
+    <div class="card" style="padding:10px;">
+      <div class="muted" style="margin-bottom:6px;">Грузоотправитель</div>
+      <div><strong>{{ cargo.shipper.name }}</strong>{% if cargo.shipper.inn %} (ИНН {{ cargo.shipper.inn }}){% endif %}</div>
+    </div>
+  {% endif %}
+
+  <div class="card" style="padding:10px;">
+    <div class="muted" style="margin-bottom:6px;">Отклик</div>
+    <form
+      hx-post="/telegram/responses/"
+      hx-target="#response-status"
+      hx-swap="innerHTML"
+    >
+      <input type="hidden" name="cargo_id" value="{{ cargo.id }}" />
+      <div class="row" style="margin-bottom:10px;">
+        <label>Имя</label>
+        <input name="name" type="text" placeholder="Ваше имя" />
+      </div>
+      <div class="row" style="margin-bottom:10px;">
+        <label>Телефон</label>
+        <input name="phone" type="text" placeholder="+7..." />
+      </div>
+      <div class="actions">
+        <button class="btn" type="submit">Откликнуться</button>
+        <a class="btn btn-secondary" href="{% url 'paywall' %}">Подписка</a>
+      </div>
+    </form>
+    <div id="response-status" style="margin-top:10px;"></div>
+  </div>
+</div>

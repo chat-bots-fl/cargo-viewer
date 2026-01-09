@@ -1,0 +1,35 @@
+{% load static %}
+{% load lazy_loading %}
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Admin Panel</title>
+    <link rel="stylesheet" href="{% static 'css/main.css' %}" />
+    <link rel="stylesheet" href="{% static 'css/lazy-loading.css' %}" />
+    {% if lazy_image_enabled %}
+      <script>
+        window.LAZY_LOADING_CONFIG = {% lazy_loading_config %};
+      </script>
+      <script src="{% static 'js/lazy-loading.js' %}" defer></script>
+    {% endif %}
+  </head>
+  <body>
+    <header class="app-header">
+      <div class="app-title">Admin Panel</div>
+      <div class="app-meta">
+        <a class="link" href="{% url 'admin_panel_dashboard' %}">Dashboard</a>
+        <a class="link" href="{% url 'admin_panel_payments' %}">Payments</a>
+        <a class="link" href="{% url 'admin_panel_subscriptions' %}">Subscriptions</a>
+        <a class="link" href="{% url 'admin_panel_promocodes' %}">Promo</a>
+        <a class="link" href="{% url 'admin_panel_settings' %}">Settings</a>
+        <a class="link" href="{% url 'admin_panel_audit_log' %}">Audit</a>
+      </div>
+    </header>
+    <main class="app-main">
+      {% block body %}{% endblock %}
+    </main>
+  </body>
+</html>
+

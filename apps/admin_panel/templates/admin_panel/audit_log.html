@@ -1,0 +1,29 @@
+{% extends "admin_panel/base.html" %}
+{% block body %}
+  <section class="card">
+    <div class="card-title">Audit Log</div>
+    <table style="width:100%;border-collapse:collapse;">
+      <thead>
+        <tr>
+          <th style="text-align:left;">Time</th>
+          <th style="text-align:left;">Type</th>
+          <th style="text-align:left;">User</th>
+          <th style="text-align:left;">Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for l in logs %}
+          <tr>
+            <td>{{ l.created_at }}</td>
+            <td>{{ l.action_type }}</td>
+            <td>{{ l.username }}</td>
+            <td>{{ l.action }}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="4" class="muted">Нет данных</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+{% endblock %}
+

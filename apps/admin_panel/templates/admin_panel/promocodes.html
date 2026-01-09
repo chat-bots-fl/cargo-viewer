@@ -1,0 +1,61 @@
+{% extends "admin_panel/base.html" %}
+{% block body %}
+  <section class="card">
+    <div class="card-title">Создать промокод</div>
+    {% if error %}<div class="muted">Ошибка: {{ error }}</div>{% endif %}
+    <form method="post">
+      {% csrf_token %}
+      <div class="row" style="margin-bottom:10px;">
+        <label>Action</label>
+        <select name="action">
+          {% for a in actions %}<option value="{{ a }}">{{ a }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="row" style="margin-bottom:10px;">
+        <label>Code (optional)</label>
+        <input name="code" placeholder="AUTO" />
+      </div>
+      <div class="row" style="margin-bottom:10px;">
+        <label>Max uses</label>
+        <input name="max_uses" type="number" value="1" min="1" />
+      </div>
+      <div class="row" style="margin-bottom:10px;">
+        <label>Valid from (ISO)</label>
+        <input name="valid_from" value="{{ now|date:'c' }}" />
+      </div>
+      <div class="row" style="margin-bottom:10px;">
+        <label>Valid until (ISO)</label>
+        <input name="valid_until" value="{{ now_plus_30|date:'c' }}" />
+      </div>
+      <button class="btn" type="submit">Создать</button>
+    </form>
+  </section>
+
+  <section class="card">
+    <div class="card-title">Промокоды</div>
+    <table style="width:100%;border-collapse:collapse;">
+      <thead>
+        <tr>
+          <th style="text-align:left;">Code</th>
+          <th style="text-align:left;">Action</th>
+          <th style="text-align:left;">Days</th>
+          <th style="text-align:left;">Uses</th>
+          <th style="text-align:left;">Valid</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in promocodes %}
+          <tr>
+            <td>{{ p.code }}</td>
+            <td>{{ p.action }}</td>
+            <td>{{ p.days_to_add }}</td>
+            <td>{{ p.current_uses }}/{{ p.max_uses }}</td>
+            <td>{{ p.valid_from }} → {{ p.valid_until }}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="5" class="muted">Нет данных</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+{% endblock %}

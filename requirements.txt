@@ -1,0 +1,47 @@
+# Django
+Django>=5.0,<6.0
+whitenoise>=6.6.0
+gunicorn>=21.2.0
+
+# Django REST Framework
+djangorestframework>=3.14.0
+drf-spectacular>=0.27.0
+
+# HTTP + integrations
+requests>=2.31.0
+
+# Auth/session token
+PyJWT>=2.8.0
+
+# Cache
+django-redis>=5.4.0
+
+# Env + config
+python-dotenv>=1.0.0
+dj-database-url>=2.1.0
+
+# Database driver (PostgreSQL)
+psycopg[binary]>=3.1.0
+
+# Optional encryption for SystemSetting secrets
+cryptography>=41.0.0
+
+# Data validation
+pydantic>=2.0.0
+
+# Monitoring and error tracking
+sentry-sdk>=1.40.0
+
+# Testing
+pytest>=7.4.0
+pytest-django>=4.5.0
+pytest-cov>=4.1.0
+
+# Code quality tools
+black>=24.0.0
+flake8>=7.0.0
+mypy>=1.8.0
+mypy-django-stubs>=1.9.0
+django-stubs>=4.2.0
+isort>=5.13.0
+pre-commit>=3.6.0

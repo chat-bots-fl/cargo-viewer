@@ -1,0 +1,11 @@
+<div class="cargo-card" data-cargo-open="{{ cargo.id }}">
+  <div class="cargo-top">
+    <div class="cargo-route">{{ cargo.route }}</div>
+    <div class="cargo-price">{{ cargo.price }}</div>
+  </div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;">
+    {% if cargo.date %}<span class="pill">📅 {{ cargo.date }}</span>{% endif %}
+    {% if cargo.wv %}<span class="pill">⚖️ {{ cargo.wv }}</span>{% endif %}
+    {% for p in cargo.pills %}<span class="pill">{{ p }}</span>{% endfor %}
+  </div>
+</div>

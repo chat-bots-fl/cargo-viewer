@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block body %}
+  <header class="app-header">
+    <div class="app-title">Подписка</div>
+    <div class="app-meta">
+      <a class="link" href="{% url 'webapp_home' %}">← назад</a>
+    </div>
+  </header>
+  <main class="app-main">
+    <section class="card">
+      <div class="card-title">Статус</div>
+      {% if subscription and subscription.is_active and not subscription.is_expired %}
+        <div>✅ Активна до: <strong>{{ subscription.expires_at }}</strong></div>
+      {% else %}
+        <div class="muted">Подписка не активна.</div>
+      {% endif %}
+    </section>
+
+    <section class="card">
+      <div class="card-title">Тарифы</div>
+      <div id="payment-result" class="muted" style="margin-bottom:10px;"></div>
+      {% for name, t in tariffs.items %}
+        <div class="cargo-card" style="cursor:default;">
+          <div class="cargo-top">
+            <div class="cargo-route">{{ name }}</div>
+            <div class="cargo-price">{{ t.price|default:t.price }}</div>
+          </div>
+          <div class="muted">Дней: {{ t.days|default:t.days }}</div>
+          <form hx-post="/api/payments/create" hx-target="#payment-result" hx-swap="innerHTML">
+            <input type="hidden" name="tariff_name" value="{{ name }}" />
+            <input type="hidden" name="return_url" value="{{ return_url }}" />
+            <button class="btn" type="submit">Оплатить</button>
+          </form>
+        </div>
+      {% empty %}
+        <div class="muted">Тарифы не настроены.</div>
+      {% endfor %}
+    </section>
+
+    <section class="card">
+      <div class="card-title">Промокод</div>
+      <div id="promo-result" class="muted" style="margin-bottom:10px;"></div>
+      <form hx-post="/api/promocodes/apply" hx-target="#promo-result" hx-swap="innerHTML">
+        <div class="row" style="margin-bottom:10px;">
+          <label>Код</label>
+          <input name="code" type="text" placeholder="SUMMER2026" />
+        </div>
+        <button class="btn" type="submit">Применить</button>
+      </form>
+    </section>
+  </main>
+{% endblock %}

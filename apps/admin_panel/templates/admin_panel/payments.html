@@ -1,0 +1,41 @@
+{% extends "admin_panel/base.html" %}
+{% block body %}
+  <section class="card">
+    <div class="card-title">Платежи</div>
+    <form method="get" style="display:flex;gap:10px;flex-wrap:wrap;">
+      <input name="search" value="{{ search }}" placeholder="search" />
+      <input name="status" value="{{ status }}" placeholder="status" />
+      <button class="btn" type="submit">Фильтр</button>
+    </form>
+  </section>
+
+  <section class="card">
+    <table style="width:100%;border-collapse:collapse;">
+      <thead>
+        <tr>
+          <th style="text-align:left;">Created</th>
+          <th style="text-align:left;">User</th>
+          <th style="text-align:left;">Tariff</th>
+          <th style="text-align:left;">Amount</th>
+          <th style="text-align:left;">Status</th>
+          <th style="text-align:left;">YuKassa</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in payments %}
+          <tr>
+            <td>{{ p.created_at }}</td>
+            <td>{{ p.user.username }}</td>
+            <td>{{ p.tariff_name }}</td>
+            <td>{{ p.amount }} {{ p.currency }}</td>
+            <td>{{ p.status }}</td>
+            <td>{{ p.yukassa_payment_id }}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="6" class="muted">Нет данных</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+{% endblock %}
+

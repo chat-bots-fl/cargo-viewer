@@ -1,0 +1,33 @@
+[flake8]
+max-line-length = 100
+exclude =
+    .git,
+    __pycache__,
+    .venv,
+    venv,
+    env,
+    build,
+    dist,
+    *.egg-info,
+    .mypy_cache,
+    .pytest_cache,
+    .tox,
+    .coverage,
+    htmlcov,
+    migrations,
+    node_modules,
+    staticfiles,
+    mediafiles
+ignore =
+    E203,  # whitespace before ':'
+    W503,  # line break before binary operator
+    E501,  # line too long (handled by black)
+    C901,  # too complex
+per-file-ignores =
+    __init__.py:F401
+    conftest.py:F401,F811
+    settings/*:F401,F403
+max-complexity = 10
+show-source = true
+statistics = true
+count = true

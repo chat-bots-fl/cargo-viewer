@@ -1,0 +1,52 @@
+# Systemd Service for Cargo Viewer Production
+#
+# GOAL: Configure systemd to manage Docker containers for Cargo Viewer
+#
+# Features:
+# - Automatic startup on boot
+# - Automatic restart on failure
+# - Resource limits
+# - Logging configuration
+# - Dependency management
+
+[Unit]
+Description=Cargo Viewer Django Application
+Documentation=https://github.com/yourorg/cargo-viewer
+After=docker.service network-online.target
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/cargo-viewer
+EnvironmentFile=/opt/cargo-viewer/.env.production
+ExecStartPre=/usr/local/bin/docker-compose -f /opt/cargo-viewer/docker-compose.prod.yml pull
+ExecStart=/usr/local/bin/docker-compose -f /opt/cargo-viewer/docker-compose.prod.yml up -d
+ExecStop=/usr/local/bin/docker-compose -f /opt/cargo-viewer/docker-compose.prod.yml down
+ExecReload=/usr/local/bin/docker-compose -f /opt/cargo-viewer/docker-compose.prod.yml restart
+TimeoutStartSec=300
+TimeoutStopSec=120
+Restart=on-failure
+RestartSec=10
+
+# Resource limits
+LimitNOFILE=65536
+LimitNPROC=65536
+MemoryMax=4G
+CPUQuota=200%
+
+# Security
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/cargo-viewer /var/log/cargo-viewer
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=cargo-viewer
+
+[Install]
+WantedBy=multi-user.target

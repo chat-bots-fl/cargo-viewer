@@ -1,0 +1,438 @@
+# Docker Compose Configuration for Cargo Viewer Production
+#
+# GOAL: Define production services with security, monitoring, and performance optimizations
+#
+# Services:
+# - Web: Django application with Gunicorn
+# - Celery: Background task workers
+# - Celery Beat: Scheduled task scheduler
+# - PostgreSQL: Production database
+# - Redis: Cache and message broker
+# - Nginx: Reverse proxy (optional, can be external)
+
+version: '3.8'
+
+services:
+  # Django Web Application
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.prod
+      args:
+        BUILDKIT_INLINE_CACHE: 1
+    image: cargo-viewer:production
+    container_name: cargo-viewer-web
+    restart: unless-stopped
+    command: gunicorn config.wsgi:application \
+      --bind 0.0.0.0:8000 \
+      --workers ${GUNICORN_WORKERS:-4} \
+      --threads ${GUNICORN_THREADS:-4} \
+      --worker-class sync \
+      --worker-connections 1000 \
+      --max-requests ${GUNICORN_MAX_REQUESTS:-1000} \
+      --max-requests-jitter ${GUNICORN_MAX_REQUESTS_JITTER:-100} \
+      --timeout ${GUNICORN_TIMEOUT:-120} \
+      --keepalive 5 \
+      --log-level ${DJANGO_LOG_LEVEL:-info} \
+      --access-logfile - \
+      --error-logfile - \
+      --capture-output
+    env_file:
+      - .env.production
+    environment:
+      - DJANGO_SETTINGS_MODULE=config.settings.production
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./media:/app/media:rw
+      - ./static:/app/static:rw
+      - ./logs:/app/logs:rw
+    ports:
+      - "8000:8000"
+    networks:
+      - cargo-viewer-network
+    depends_on:
+      - db
+      - redis
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "10"
+
+  # Celery Worker - Default Queue
+  celery:
+    build:
+      context: .
+      dockerfile: Dockerfile.prod
+      args:
+        BUILDKIT_INLINE_CACHE: 1
+    image: cargo-viewer:production
+    container_name: cargo-viewer-celery
+    restart: unless-stopped
+    command: celery -A config worker \
+      --loglevel=info \
+      --concurrency=4 \
+      --max-tasks-per-child=1000 \
+      --time-limit=300 \
+      --soft-time-limit=240 \
+      --prefetch-multiplier=4 \
+      -Q default,cargos,integrations,notifications
+    env_file:
+      - .env.production
+    environment:
+      - DJANGO_SETTINGS_MODULE=config.settings.production
+      - PYTHONUNBUFFERED=1
+      - C_FORCE_ROOT=1
+    volumes:
+      - ./media:/app/media:rw
+      - ./logs:/app/logs:rw
+    networks:
+      - cargo-viewer-network
+    depends_on:
+      - db
+      - redis
+    healthcheck:
+      test: ["CMD", "celery", "-A", "config", "inspect", "ping"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+      restart_policy:
+        condition: on-failure
+        delay: 10s
+        max_attempts: 3
+        window: 120s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "10"
+
+  # Celery Worker - High Priority Queue
+  celery-high:
+    build:
+      context: .
+      dockerfile: Dockerfile.prod
+      args:
+        BUILDKIT_INLINE_CACHE: 1
+    image: cargo-viewer:production
+    container_name: cargo-viewer-celery-high
+    restart: unless-stopped
+    command: celery -A config worker \
+      --loglevel=info \
+      --concurrency=2 \
+      --max-tasks-per-child=500 \
+      --time-limit=180 \
+      --soft-time-limit=150 \
+      --prefetch-multiplier=2 \
+      -Q high_priority
+    env_file:
+      - .env.production
+    environment:
+      - DJANGO_SETTINGS_MODULE=config.settings.production
+      - PYTHONUNBUFFERED=1
+      - C_FORCE_ROOT=1
+    volumes:
+      - ./media:/app/media:rw
+      - ./logs:/app/logs:rw
+    networks:
+      - cargo-viewer-network
+    depends_on:
+      - db
+      - redis
+    healthcheck:
+      test: ["CMD", "celery", "-A", "config", "inspect", "ping"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.1'
+          memory: 128M
+      restart_policy:
+        condition: on-failure
+        delay: 10s
+        max_attempts: 3
+        window: 120s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "10"
+
+  # Celery Beat Scheduler
+  celery-beat:
+    build:
+      context: .
+      dockerfile: Dockerfile.prod
+      args:
+        BUILDKIT_INLINE_CACHE: 1
+    image: cargo-viewer:production
+    container_name: cargo-viewer-celerybeat
+    restart: unless-stopped
+    command: celery -A config beat \
+      --loglevel=info \
+      --scheduler django_celery_beat.schedulers:DatabaseScheduler
+    env_file:
+      - .env.production
+    environment:
+      - DJANGO_SETTINGS_MODULE=config.settings.production
+      - PYTHONUNBUFFERED=1
+      - C_FORCE_ROOT=1
+    volumes:
+      - ./logs:/app/logs:rw
+    networks:
+      - cargo-viewer-network
+    depends_on:
+      - db
+      - redis
+    healthcheck:
+      test: ["CMD", "celery", "-A", "config", "inspect", "ping"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.1'
+          memory: 128M
+      restart_policy:
+        condition: on-failure
+        delay: 10s
+        max_attempts: 3
+        window: 120s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "10"
+
+  # PostgreSQL Database
+  db:
+    image: postgres:15-alpine
+    container_name: cargo-viewer-db
+    restart: unless-stopped
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backups:/backups:rw
+    env_file:
+      - .env.production
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB:-cargo_viewer_prod}
+      - POSTGRES_USER=${POSTGRES_USER:-cargo_viewer_user}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - PGDATA=/var/lib/postgresql/data/pgdata
+    ports:
+      - "5432:5432"
+    networks:
+      - cargo-viewer-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-cargo_viewer_user} -d ${POSTGRES_DB:-cargo_viewer_prod}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "10"
+    command: >
+      postgres
+      -c max_connections=200
+      -c shared_buffers=256MB
+      -c effective_cache_size=1GB
+      -c maintenance_work_mem=64MB
+      -c checkpoint_completion_target=0.9
+      -c wal_buffers=16MB
+      -c default_statistics_target=100
+      -c random_page_cost=1.1
+      -c effective_io_concurrency=200
+      -c work_mem=1310kB
+      -c min_wal_size=1GB
+      -c max_wal_size=4GB
+
+  # Redis Cache and Message Broker
+  redis:
+    image: redis:7-alpine
+    container_name: cargo-viewer-redis
+    restart: unless-stopped
+    command: >
+      redis-server
+      --appendonly yes
+      --appendfsync everysec
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+      --save 900 1
+      --save 300 10
+      --save 60 10000
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - cargo-viewer-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "10"
+
+  # Nginx Reverse Proxy (Optional - can be external)
+  nginx:
+    image: nginx:alpine
+    container_name: cargo-viewer-nginx
+    restart: unless-stopped
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./static:/var/www/static:ro
+      - ./media:/var/www/media:ro
+      - ./certbot/conf:/etc/letsencrypt:ro
+      - ./certbot/www:/var/www/certbot:ro
+      - ./logs/nginx:/var/log/nginx:rw
+    ports:
+      - "80:80"
+      - "443:443"
+    networks:
+      - cargo-viewer-network
+    depends_on:
+      - web
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "10"
+
+  # Certbot for SSL Certificate Management
+  certbot:
+    image: certbot/certbot
+    container_name: cargo-viewer-certbot
+    volumes:
+      - ./certbot/conf:/etc/letsencrypt
+      - ./certbot/www:/var/www/certbot
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
+    networks:
+      - cargo-viewer-network
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 64M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+# Networks
+networks:
+  cargo-viewer-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+# Volumes
+volumes:
+  postgres_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/cargo-viewer/data/postgres
+  redis_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/cargo-viewer/data/redis

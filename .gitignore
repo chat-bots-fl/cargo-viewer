@@ -1,2 +1,18 @@
 # Local HAR captures may contain tokens/PII; keep them out of git history.
 docs/har/
+
+# Python
+__pycache__/
+*.py[cod]
+.Python
+env/
+venv/
+.venv/
+
+# Django
+db.sqlite3
+staticfiles/
+.env
+
+# Logs
+logs/*.log

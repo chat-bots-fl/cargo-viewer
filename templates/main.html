@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block body %}
+  <header class="app-header">
+    <div class="app-title">CargoTech Driver WebApp</div>
+    <div class="app-meta">
+      <span id="driver-name" class="muted">…</span>
+      <a class="link" href="{% url 'paywall' %}">Подписка</a>
+    </div>
+  </header>
+
+  <main class="app-main">
+    <section class="card">
+      <div class="card-title">Фильтры</div>
+      <form id="filters-form" class="filters">
+        <div class="row">
+          <label>Погрузка (город)</label>
+          <input id="start_city_query" type="text" placeholder="Начните ввод…" autocomplete="off" />
+          <input id="start_point_id" name="start_point_id" type="hidden" />
+          <div id="start_city_suggest" class="suggest"></div>
+        </div>
+        <div class="row">
+          <label>Выгрузка (город)</label>
+          <input id="finish_city_query" type="text" placeholder="Начните ввод…" autocomplete="off" />
+          <input id="finish_point_id" name="finish_point_id" type="hidden" />
+          <div id="finish_city_suggest" class="suggest"></div>
+        </div>
+        <div class="row">
+          <label>Дата</label>
+          <input id="start_date" name="start_date" type="date" />
+        </div>
+        <div class="row">
+          <label>Вес/Объём</label>
+          <input id="weight_volume" name="weight_volume" type="text" placeholder="например 15-65 или 1.5-9" />
+        </div>
+        <div class="row">
+          <label>Тип погрузки (id через запятую)</label>
+          <input id="load_types" name="load_types" type="text" placeholder="например 1,2,3" />
+        </div>
+        <div class="row">
+          <label>Тип кузова (id через запятую)</label>
+          <input id="truck_types" name="truck_types" type="text" placeholder="например 1,2,4" />
+        </div>
+        <div class="actions">
+          <button type="button" id="apply-filters" class="btn">Применить</button>
+          <button type="button" id="reset-filters" class="btn btn-secondary">Сброс</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="card">
+      <div class="card-title">Грузы</div>
+      <div id="cargo-list">
+        <div class="muted">Авторизация…</div>
+      </div>
+    </section>
+  </main>
+
+  <div id="modal-root" class="modal-root hidden" aria-hidden="true">
+    <div class="modal-backdrop" data-modal-close="1"></div>
+    <div class="modal" role="dialog" aria-modal="true">
+      <div class="modal-header">
+        <div class="modal-title">Груз</div>
+        <button class="btn btn-icon" type="button" data-modal-close="1">✕</button>
+      </div>
+      <div id="modal-body" class="modal-body">
+        {% include "cargos/components/loading_spinner.html" %}
+      </div>
+    </div>
+  </div>
+
+  <section id="dev-auth" class="dev-auth hidden">
+    <div class="card">
+      <div class="card-title">Dev auth</div>
+      <p class="muted">Если вы не в Telegram, вставьте initData вручную.</p>
+      <textarea id="dev-initdata" rows="4" placeholder="initData из Telegram WebApp"></textarea>
+      <div class="actions">
+        <button type="button" id="dev-login" class="btn">Войти</button>
+      </div>
+    </div>
+  </section>
+{% endblock %}
+
