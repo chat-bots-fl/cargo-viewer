@@ -102,10 +102,11 @@ TEMPLATES = [
 WSGI_APPLICATION = "config.wsgi.application"
 
 DATABASES: dict[str, Any] = {
-    "default": dj_database_url.config(
-        default=f"sqlite:///{BASE_DIR / 'db.sqlite3'}",
-        conn_max_age=600,
-    )
+    "default": {
+        "ENGINE": "django.db.backends.sqlite3",
+        "NAME": BASE_DIR / "db.sqlite3",
+        "CONN_MAX_AGE": 600,
+    }
 }
 
 AUTH_PASSWORD_VALIDATORS: list[dict[str, str]] = []
@@ -268,9 +269,7 @@ REST_FRAMEWORK: dict[str, Any] = {
         "rest_framework.parsers.MultiPartParser",
     ],
     "EXCEPTION_HANDLER": "apps.core.exceptions.custom_exception_handler",
-    "DEFAULT_AUTHENTICATION_CLASSES": [
-        "apps.auth.middleware.JWTAuthentication",
-    ],
+    "DEFAULT_AUTHENTICATION_CLASSES": [],
 }
 
 # OpenAPI/Spectacular settings

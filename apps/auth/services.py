@@ -12,11 +12,12 @@ from urllib.parse import parse_qsl
 
 import jwt
 from django.conf import settings
+from django.contrib.auth import get_user_model
 from django.core.cache import cache
 from django.core.exceptions import ValidationError
 from django.utils import timezone as dj_timezone
 
-from apps.auth.models import TelegramSession, User, DriverProfile
+from apps.auth.models import TelegramSession, DriverProfile
 from apps.core.dtos import (
     UserDTO,
     DriverProfileDTO,
@@ -26,6 +27,8 @@ from apps.core.dtos import (
 )
 from apps.core.query_utils import get_telegram_user_id_cached
 from apps.core.repositories import SubscriptionRepository, TelegramSessionRepository
+
+User = get_user_model()
 
 logger = logging.getLogger("telegram_auth")
 
@@ -234,14 +237,17 @@ class SessionService:
         # Use repository if provided, otherwise direct ORM access for backward compatibility
         if session_repo is not None:
             from asgiref.sync import sync_to_async
-            await session_repo.revoke_all_user_sessions(user.id)
-            await session_repo.create(
+            import asyncio
+            
+            # Run async repository methods in sync context
+            asyncio.run(sync_to_async(session_repo.revoke_all_user_sessions)(user.id))
+            asyncio.run(sync_to_async(session_repo.create)(
                 user=user,
                 session_id=session_id,
                 expires_at=dj_timezone.now() + timedelta(seconds=ttl_seconds),
                 ip_address=ip_address,
                 user_agent=user_agent or "",
-            )
+            ))
         else:
             TelegramSession.objects.filter(user=user, revoked_at__isnull=True).update(revoked_at=dj_timezone.now())
             TelegramSession.objects.create(
@@ -545,7 +551,10 @@ def has_admin_subscription(
         # Use repository if provided, otherwise direct ORM access for backward compatibility
         if subscription_repo is not None:
             from asgiref.sync import sync_to_async
-            subscription = sync_to_async(subscription_repo.get_by_user_with_relations)(user.id)
+            import asyncio
+            
+            # Run async repository method in sync context
+            subscription = asyncio.run(sync_to_async(subscription_repo.get_by_user_with_relations)(user.id))
         else:
             from apps.subscriptions.models import Subscription
             subscription = Subscription.objects.select_related("user").filter(user=user).first()
