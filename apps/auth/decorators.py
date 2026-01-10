@@ -39,8 +39,21 @@ def require_driver(view: T) -> T:
     @wraps(view)
     def _wrapped(request: HttpRequest, *args, **kwargs):
         ctx = getattr(request, "auth_context", None)
+        
+        # Detailed logging for debugging
+        logger.info(f"require_driver - Checking auth for {request.path}")
+        logger.info(f"require_driver - auth_context exists: {ctx is not None}")
+        if ctx:
+            logger.info(f"require_driver - driver_data exists: {ctx.driver_data is not None}")
+            if ctx.driver_data:
+                logger.info(f"require_driver - driver_data: {ctx.driver_data}")
+        logger.info(f"require_driver - request.user: {getattr(request, 'user', 'NO USER')}")
+        
         if not ctx or not ctx.driver_data:
+            logger.warning(f"require_driver - AUTH FAILED! ctx={ctx}, driver_data={getattr(ctx, 'driver_data', 'N/A')}")
             return JsonResponse({"error": "unauthorized"}, status=401)
+        
+        logger.info(f"require_driver - AUTH PASSED, executing view")
         return view(request, *args, **kwargs)
 
     return _wrapped  # type: ignore[return-value]

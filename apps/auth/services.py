@@ -104,48 +104,71 @@ class TelegramAuthService:
         data = dict(pairs)
 
         hash_value = data.pop("hash", None)
-        if not hash_value:
+        
+        # Skip hash validation in development if TELEGRAM_SKIP_HASH_VALIDATION is True
+        skip_hash_validation = getattr(settings, 'TELEGRAM_SKIP_HASH_VALIDATION', False)
+        
+        if not hash_value and not skip_hash_validation:
             _record_auth_failure("missing_hash")
             raise ValidationError("Missing Telegram hash")
 
-        data_check_string = "\n".join(f"{k}={v}" for k, v in sorted(data.items()))
-        secret = hashlib.sha256(bot_token.encode("utf-8")).digest()
-        calculated_hash = hmac.new(secret, data_check_string.encode("utf-8"), hashlib.sha256).hexdigest()
+        if hash_value and not skip_hash_validation:
+            data_check_string = "\n".join(f"{k}={v}" for k, v in sorted(data.items()))
+            secret = hashlib.sha256(bot_token.encode("utf-8")).digest()
+            calculated_hash = hmac.new(secret, data_check_string.encode("utf-8"), hashlib.sha256).hexdigest()
 
-        if not hmac.compare_digest(calculated_hash, hash_value):
-            _record_auth_failure("invalid_hash")
-            
-            # Add breadcrumb for auth failure
-            add_breadcrumb(
-                message="Telegram auth failed: invalid hash",
-                category="auth",
-                level="warning",
-                data={
-                    "service": "telegram_auth",
-                    "reason": "invalid_hash",
-                }
-            )
-            
-            logger.warning("Invalid Telegram hash (init_data_prefix=%r)", init_data[:64])
-            raise ValidationError("Invalid Telegram hash")
+            logger.info(f"Telegram hash validation - calculated: {calculated_hash}, received: {hash_value}")
+            logger.info(f"Telegram hash validation - data_check_string: {data_check_string}")
+            logger.info(f"Telegram hash validation - bot_token_prefix: {bot_token[:10]}...")
 
+            if not hmac.compare_digest(calculated_hash, hash_value):
+                _record_auth_failure("invalid_hash")
+                
+                # Add breadcrumb for auth failure
+                add_breadcrumb(
+                    message="Telegram auth failed: invalid hash",
+                    category="auth",
+                    level="warning",
+                    data={
+                        "service": "telegram_auth",
+                        "reason": "invalid_hash",
+                    }
+                )
+                
+                logger.warning("Invalid Telegram hash (init_data_prefix=%r)", init_data[:64])
+                raise ValidationError("Invalid Telegram hash")
+        elif skip_hash_validation:
+            logger.warning("TELEGRAM_SKIP_HASH_VALIDATION is True - skipping hash validation (DEVELOPMENT MODE)")
+
+        # Skip auth_date validation in development if TELEGRAM_SKIP_AUTH_DATE_VALIDATION is True
+        skip_auth_date_validation = getattr(settings, 'TELEGRAM_SKIP_AUTH_DATE_VALIDATION', False)
+        
+        if skip_auth_date_validation:
+            logger.warning("TELEGRAM_SKIP_AUTH_DATE_VALIDATION is True - skipping auth_date validation (DEVELOPMENT MODE)")
+        else:
+            try:
+                auth_date = int(data.get("auth_date", "0"))
+            except ValueError:
+                _record_auth_failure("invalid_auth_date")
+                raise ValidationError("Invalid auth_date")
+
+            now_ts = int(datetime.now(tz=timezone.utc).timestamp())
+            age = now_ts - auth_date
+
+            if age > max_age_seconds:
+                _record_auth_failure("expired")
+                logger.warning("Telegram auth too old: age=%ss max=%ss", age, max_age_seconds)
+                raise ValidationError("Authentication expired")
+            if age < -10:
+                _record_auth_failure("future_auth_date")
+                logger.warning("Telegram auth_date is in the future: age=%ss", age)
+                raise ValidationError("Invalid auth_date")
+        
+        # Always parse auth_date for return value (even if validation skipped)
         try:
             auth_date = int(data.get("auth_date", "0"))
         except ValueError:
-            _record_auth_failure("invalid_auth_date")
-            raise ValidationError("Invalid auth_date")
-
-        now_ts = int(datetime.now(tz=timezone.utc).timestamp())
-        age = now_ts - auth_date
-
-        if age > max_age_seconds:
-            _record_auth_failure("expired")
-            logger.warning("Telegram auth too old: age=%ss max=%ss", age, max_age_seconds)
-            raise ValidationError("Authentication expired")
-        if age < -10:
-            _record_auth_failure("future_auth_date")
-            logger.warning("Telegram auth_date is in the future: age=%ss", age)
-            raise ValidationError("Invalid auth_date")
+            auth_date = 0
 
         user_raw = data.get("user")
         if not user_raw:
@@ -232,7 +255,17 @@ class SessionService:
 
         session_id = str(uuid.uuid4())
         cache_key = cls.CACHE_KEY_FMT.format(user_id=user.id)
+        
+        # Log cache operation
+        logger.info(f"SessionService.create_session - user_id={user.id}, session_id={session_id}, cache_key={cache_key}")
         cache.set(cache_key, session_id, timeout=ttl_seconds)
+        
+        # Verify cache was set
+        cached_value = cache.get(cache_key)
+        logger.info(f"SessionService.create_session - cache.set() returned, cached_value={cached_value}, expected={session_id}")
+        
+        if cached_value != session_id:
+            logger.error(f"SessionService.create_session - CACHE MISMATCH! cached={cached_value}, expected={session_id}")
 
         # Use repository if provided, otherwise direct ORM access for backward compatibility
         if session_repo is not None:
@@ -342,12 +375,23 @@ class TokenService:
         if not user_id or not session_id:
             raise ValidationError("Invalid session token payload")
 
-        cache_key = SessionService.CACHE_KEY_FMT.format(user_id=user_id)
-        cached_sid = cache.get(cache_key)
-        if not cached_sid or str(cached_sid) != str(session_id):
-            raise ValidationError("Session revoked")
-
-        cache.set(cache_key, str(session_id), timeout=SessionService.DEFAULT_TTL_SECONDS)
+        # Skip cache validation in development mode
+        skip_cache_validation = getattr(settings, 'SKIP_CACHE_VALIDATION', False)
+        
+        if not skip_cache_validation:
+            cache_key = SessionService.CACHE_KEY_FMT.format(user_id=user_id)
+            cached_sid = cache.get(cache_key)
+            
+            # Log cache operation
+            logger.info(f"TokenService.validate_session - user_id={user_id}, session_id={session_id}, cache_key={cache_key}, cached_sid={cached_sid}")
+            
+            if not cached_sid or str(cached_sid) != str(session_id):
+                logger.error(f"TokenService.validate_session - SESSION REVOKED! cached_sid={cached_sid}, expected={session_id}")
+                raise ValidationError("Session revoked")
+            
+            cache.set(cache_key, str(session_id), timeout=SessionService.DEFAULT_TTL_SECONDS)
+        else:
+            logger.warning("SKIP_CACHE_VALIDATION is True - skipping cache validation (DEVELOPMENT MODE)")
 
         refreshed_token: str | None = None
         exp = payload.get("exp")
@@ -370,11 +414,28 @@ class TokenService:
         
         try:
             user = User.objects.get(id=user_id_int)
-            user_dto = model_to_dto(user, UserDTO)
             
-            # Try to get driver profile
+            # Get driver profile first to get telegram_id
+            telegram_id = None
             if hasattr(user, 'driverprofile'):
-                driver_dto = model_to_dto(user.driverprofile, DriverProfileDTO)
+                driver_profile = user.driverprofile
+                telegram_id = driver_profile.telegram_user_id
+                driver_dto = model_to_dto(driver_profile, DriverProfileDTO)
+            
+            # Create UserDTO manually since Django User doesn't have telegram_id
+            if telegram_id:
+                user_dto = UserDTO(
+                    id=user.id,
+                    telegram_id=telegram_id,
+                    username=user.username,
+                    first_name=user.first_name,
+                    last_name=user.last_name,
+                    phone=user.email,  # Using email as phone for now
+                    is_driver=driver_dto is not None,
+                    is_active=user.is_active,
+                    created_at=user.date_joined,
+                    updated_at=user.last_login or user.date_joined,
+                )
             
             # Try to get active session
             session = TelegramSession.objects.filter(
@@ -383,7 +444,16 @@ class TokenService:
                 revoked_at__isnull=True
             ).first()
             if session:
-                session_dto = model_to_dto(session, TelegramSessionDTO)
+                # Create TelegramSessionDTO manually since model doesn't have telegram_id and updated_at
+                session_dto = TelegramSessionDTO(
+                    id=session.id,
+                    user_id=session.user_id,
+                    telegram_id=telegram_id if telegram_id else 0,
+                    session_data={},
+                    is_active=session.revoked_at is None,
+                    created_at=session.created_at,
+                    updated_at=session.created_at,  # Using created_at since model doesn't have updated_at
+                )
                 
         except User.DoesNotExist:
             pass

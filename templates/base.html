@@ -9,8 +9,9 @@
     <link rel="stylesheet" href="{% static 'css/main.css' %}" />
     <link rel="stylesheet" href="{% static 'css/spinner.css' %}" />
     <link rel="stylesheet" href="{% static 'css/lazy-loading.css' %}" />
-    <script src="https://unpkg.com/htmx.org@1.9.12"></script>
-    <script src="{% static 'js/app.js' %}" defer></script>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="https://unpkg.com/htmx.org@1.9.12/dist/htmx.min.js"></script>
+    <script src="{% static 'js/app.js' %}?v=3"></script>
     <script src="{% static 'js/filters.js' %}" defer></script>
     {% if lazy_image_enabled %}
       <script>

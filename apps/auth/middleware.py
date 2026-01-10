@@ -47,21 +47,46 @@ class JWTAuthenticationMiddleware(MiddlewareMixin):
         else:
             token = str(request.COOKIES.get("session_token") or "").strip()
 
+        # Логирование для отладки
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"JWTMiddleware - path: {request.path}, header: {header[:50] if header else 'none'}, cookie_token: {bool(request.COOKIES.get('session_token'))}, token: {token[:20] if token else 'none'}...")
+
         if not token:
+            logger.warning(f"JWTMiddleware - no token found, setting AnonymousUser")
             request.user = getattr(request, "user", AnonymousUser())
             return
 
         try:
+            logger.info(f"JWTMiddleware - calling TokenService.validate_session with token: {token[:20]}...")
             result = TokenService.validate_session(token)
-        except Exception:
+            logger.info(f"JWTMiddleware - token validated, user_dto: {result.user_dto}, driver_dto: {result.driver_dto}")
+        except Exception as e:
+            logger.error(f"JWTMiddleware - token validation failed: {e}", exc_info=True)
             request.user = AnonymousUser()
             return
 
-        request.auth_context.driver_data = result.driver_data  # type: ignore[attr-defined]
+        logger.info(f"JWTMiddleware - setting auth_context.driver_data: {result.driver_dto}")
+        request.auth_context.driver_data = result.driver_dto  # type: ignore[attr-defined]
         request.auth_context.refreshed_token = result.refreshed_token  # type: ignore[attr-defined]
-        try:
-            request.user = User.objects.get(id=int(result.driver_data["user_id"]))
-        except Exception:
+        
+        if result.user_dto:
+            try:
+                logger.info(f"JWTMiddleware - getting user with id: {result.user_dto.id}")
+                request.user = User.objects.get(id=int(result.user_dto.id))
+                logger.info(f"JWTMiddleware - user set: {request.user.username}, user.id: {request.user.id}")
+                
+                # Проверяем наличие driverprofile
+                if hasattr(request.user, 'driverprofile'):
+                    logger.info(f"JWTMiddleware - user has driverprofile attribute")
+                else:
+                    logger.warning(f"JWTMiddleware - user does NOT have driverprofile attribute")
+                    
+            except Exception as e:
+                logger.error(f"JWTMiddleware - failed to get user: {e}", exc_info=True)
+                request.user = AnonymousUser()
+        else:
+            logger.warning(f"JWTMiddleware - user_dto is None, setting AnonymousUser")
             request.user = AnonymousUser()
 
     """

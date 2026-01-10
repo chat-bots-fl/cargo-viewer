@@ -164,10 +164,11 @@ class APIVersioningMiddleware:
             version = get_api_version(request)
             request.api_version = version
 
-            # Log request with version
+            # Log request with version (safely access user if available)
+            user_info = getattr(request, 'user', 'anonymous')
             logger.info(
                 f"API Request: {request.method} {request.path} "
-                f"(version: {version}, user: {request.user})"
+                f"(version: {version}, user: {user_info})"
             )
 
         except Exception as exc:

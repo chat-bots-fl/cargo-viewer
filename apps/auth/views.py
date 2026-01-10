@@ -112,6 +112,9 @@ def telegram_auth(request):
     """
     Validate initData, upsert Django user + DriverProfile, then issue a JWT token bound to Redis session id.
     """
+    import logging
+    logger = logging.getLogger("telegram_auth")
+    
     if request.method != "POST":
         return JsonResponse({"error": "method_not_allowed"}, status=405)
 
@@ -120,10 +123,20 @@ def telegram_auth(request):
     except json.JSONDecodeError:
         return JsonResponse({"error": "invalid_json"}, status=400)
 
+    logger.info(f"Received auth request payload keys: {list(payload.keys())}")
+    if 'init_data' in payload:
+        init_data = payload['init_data']
+        logger.info(f"init_data length: {len(init_data)}")
+        logger.info(f"init_data prefix: {init_data[:100]}")
+        logger.info(f"init_data suffix: {init_data[-100:]}")
+
     try:
         validated = validate_request_body(TelegramAuthRequest, payload)
         init_data = validated.init_data
+        logger.info(f"Validated init_data length: {len(init_data)}")
+        logger.info(f"Validated init_data prefix: {init_data[:100]}")
     except AppValidationError as exc:
+        logger.error(f"Validation error: {exc}")
         return JsonResponse({"error": str(exc)}, status=400)
 
     try:
@@ -162,6 +175,9 @@ def telegram_auth(request):
         user_agent=request.META.get("HTTP_USER_AGENT"),
     )
 
+    logger.info(f"Auth success - telegram_user_id: {telegram_user_id}, first_name: {first_name}, username: {telegram_username}")
+    logger.info(f"Auth success - token: {token[:50]}...")
+
     response = JsonResponse(
         {
             "session_token": token,
@@ -172,6 +188,8 @@ def telegram_auth(request):
             },
         }
     )
+    
+    logger.info(f"Auth success - response prepared with status 200")
     response.set_cookie(
         "session_token",
         token,

@@ -118,7 +118,7 @@ class CargoService:
                 title=route,
                 route_from=start_city,
                 route_to=finish_city,
-                distance=data.get("distance"),
+                distance=cargo.get("distance"),
                 price=Decimal(str(cargo.get("price", 0))) / Decimal(100) if cargo.get("price") else None,
                 cargo_type=load_short,
                 weight=float(weight) if weight else None,

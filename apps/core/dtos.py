@@ -7,10 +7,13 @@ All DTOs use from_attributes=True for Django model compatibility.
 
 from datetime import datetime
 from decimal import Decimal
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, TypeVar, Type
 from pydantic import BaseModel, Field, ConfigDict
 
 from django.db.models import Model
+
+# Type variable for generic DTO functions
+T = TypeVar('T', bound=BaseModel)
 
 
 # ============================================================================

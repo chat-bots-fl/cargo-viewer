@@ -47,6 +47,11 @@ LOGGING = {
             "format": "%(asctime)s %(levelname)s %(name)s %(message)s",
         },
     },
+    "filters": {
+        "require_debug_true": {
+            "()": "django.utils.log.RequireDebugTrue",
+        },
+    },
     "handlers": {
         "console": {
             "class": "logging.StreamHandler",
@@ -158,12 +163,25 @@ RATE_LIMIT_ENABLED = False
 # Disable circuit breaker in development for easier testing
 CIRCUIT_BREAKER_ENABLED = False
 
-# More permissive CSP for development
-CSP_SCRIPT_SRC = "'self' 'unsafe-inline' 'unsafe-eval'"
+# More permissive CSP for development (allow external scripts like HTMX from CDN)
+CSP_SCRIPT_SRC = "'self' 'unsafe-inline' 'unsafe-eval' https://unpkg.com https://telegram.org"
 CSP_STYLE_SRC = "'self' 'unsafe-inline'"
+CSP_CONNECT_SRC = "'self' https://unpkg.com https://telegram.org https://*.telegram.org wss://*.telegram.org"
 
 # Disable HSTS in development (HTTP is allowed)
 HSTS_ENABLED = False
+
+# Allow Telegram WebApp to be embedded in Telegram
+X_FRAME_OPTIONS = "SAMEORIGIN"
+
+# Skip Telegram hash validation in development for easier testing
+TELEGRAM_SKIP_HASH_VALIDATION = True
+
+# Skip Telegram auth_date validation in development for easier testing
+TELEGRAM_SKIP_AUTH_DATE_VALIDATION = True
+
+# Skip cache validation in development (for development without Redis)
+SKIP_CACHE_VALIDATION = True
 
 # Sentry environment override
 SENTRY_ENVIRONMENT = "development"
