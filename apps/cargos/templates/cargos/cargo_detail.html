@@ -1,55 +1,70 @@
-<div style="display:grid;gap:10px;">
-  <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;">
-    <div>
-      <div style="font-weight:800;font-size:18px;">{{ cargo.route }}</div>
-      <div class="muted">ID: {{ cargo.id }}</div>
+<div id="modal-header" class="modal-header cargo-detail-header" hx-swap-oob="true">
+  <div class="cargo-detail-header-top">
+    <div class="cargo-detail-header-left">
+      <div class="muted cargo-detail-id">ID: {{ cargo.cargo_id|default:cargo.id }}</div>
     </div>
-    <div class="cargo-price" style="font-size:18px;">{{ cargo.price }}</div>
-  </div>
-
-  <div class="card" style="padding:10px;">
-    <div class="muted" style="margin-bottom:6px;">Маршрут</div>
-    <div style="display:grid;gap:6px;">
-      <div><strong>Погрузка:</strong> {{ cargo.start.city }}{% if cargo.start.address %}, {{ cargo.start.address }}{% endif %}{% if cargo.start.date %} ({{ cargo.start.date }}){% endif %}</div>
-      <div><strong>Выгрузка:</strong> {{ cargo.finish.city }}{% if cargo.finish.address %}, {{ cargo.finish.address }}{% endif %}{% if cargo.finish.date %} ({{ cargo.finish.date }}){% endif %}</div>
+    <div class="cargo-detail-header-right">
+      <div class="cargo-price cargo-detail-price">{{ cargo.price_display|default:cargo.price }}</div>
+      <button class="btn btn-icon cargo-detail-close" type="button" data-modal-close="1">✕</button>
     </div>
   </div>
 
-  {% if cargo.comment %}
+  <div class="cargo-detail-points">
+    <div class="cargo-detail-point">
+      <div class="muted cargo-detail-point-label">Погрузка</div>
+      <div class="cargo-detail-point-value">{{ cargo.route_from }}{% if cargo.loading_address %}, {{ cargo.loading_address }}{% endif %}{% if cargo.loading_date %} ({{ cargo.loading_date|date:"j b H:i" }}){% endif %}</div>
+    </div>
+    <div class="cargo-detail-point">
+      <div class="muted cargo-detail-point-label">Выгрузка</div>
+      <div class="cargo-detail-point-value">{{ cargo.route_to }}{% if cargo.unloading_address %}, {{ cargo.unloading_address }}{% endif %}{% if cargo.unloading_date %} ({{ cargo.unloading_date|date:"j b H:i" }}){% endif %}</div>
+    </div>
+  </div>
+</div>
+
+<div class="cargo-detail-content" style="display:grid;gap:10px;">
+
+  {% if cargo.cargo_type or cargo.truck_type or cargo.loading_type or cargo.wv_display %}
+    <div class="card" style="padding:10px;">
+      <div class="muted" style="margin-bottom:6px;">Параметры</div>
+      <div style="display:grid;gap:6px;">
+        {% if cargo.cargo_type %}<div><strong>Тип груза:</strong> {{ cargo.cargo_type }}</div>{% endif %}
+        {% if cargo.truck_type %}<div><strong>Тип кузова:</strong> {{ cargo.truck_type }}</div>{% endif %}
+        {% if cargo.loading_type %}<div><strong>Тип погрузки:</strong> {{ cargo.loading_type }}</div>{% endif %}
+        {% if cargo.wv_display %}<div><strong>Вес / объём:</strong> {{ cargo.wv_display }}</div>{% endif %}
+      </div>
+    </div>
+  {% endif %}
+
+  {% if cargo.description %}
     <div class="card" style="padding:10px;">
       <div class="muted" style="margin-bottom:6px;">Комментарий</div>
-      <div>{{ cargo.comment }}</div>
+      <div>{{ cargo.description }}</div>
     </div>
   {% endif %}
 
-  {% if cargo.shipper.name %}
+  {% if cargo.contact_name %}
     <div class="card" style="padding:10px;">
       <div class="muted" style="margin-bottom:6px;">Грузоотправитель</div>
-      <div><strong>{{ cargo.shipper.name }}</strong>{% if cargo.shipper.inn %} (ИНН {{ cargo.shipper.inn }}){% endif %}</div>
+      <div><strong>{{ cargo.contact_name }}</strong>{% if cargo.shipper_inn %} (ИНН {{ cargo.shipper_inn }}){% endif %}</div>
     </div>
   {% endif %}
 
-  <div class="card" style="padding:10px;">
-    <div class="muted" style="margin-bottom:6px;">Отклик</div>
-    <form
-      hx-post="/telegram/responses/"
-      hx-target="#response-status"
-      hx-swap="innerHTML"
-    >
-      <input type="hidden" name="cargo_id" value="{{ cargo.id }}" />
-      <div class="row" style="margin-bottom:10px;">
-        <label>Имя</label>
-        <input name="name" type="text" placeholder="Ваше имя" />
+  {% if cargo.contacts_company_name or cargo.contacts_person_name or cargo.contacts_phone %}
+    <div class="card" style="padding:10px;">
+      <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;">
+        <div class="muted">Контакты</div>
+        {% if cargo.contacts_company_name %}<div><strong>{{ cargo.contacts_company_name }}</strong></div>{% endif %}
       </div>
-      <div class="row" style="margin-bottom:10px;">
-        <label>Телефон</label>
-        <input name="phone" type="text" placeholder="+7..." />
+
+      <div style="display:grid;gap:8px;margin-top:8px;">
+        {% if cargo.contacts_person_name %}<div><strong>Логист:</strong> {{ cargo.contacts_person_name }}</div>{% endif %}
+        {% if cargo.contacts_phone %}
+          <div style="display:grid;gap:6px;">
+            <div class="muted">Номер телефона</div>
+            <a class="btn btn-secondary contact-phone" href="tel:{{ cargo.contacts_phone_tel|default:cargo.contacts_phone }}">{{ cargo.contacts_phone }}</a>
+          </div>
+        {% endif %}
       </div>
-      <div class="actions">
-        <button class="btn" type="submit">Откликнуться</button>
-        <a class="btn btn-secondary" href="{% url 'paywall' %}">Подписка</a>
-      </div>
-    </form>
-    <div id="response-status" style="margin-top:10px;"></div>
-  </div>
+    </div>
+  {% endif %}
 </div>

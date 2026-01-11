@@ -141,6 +141,55 @@ input:focus, textarea:focus {
 .cargo-route { font-weight: 700; }
 .cargo-price { color: var(--accent); font-weight: 800; }
 
+.cargo-locations {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 10px;
+  align-items: start;
+}
+
+.cargo-location {
+  display: grid;
+  gap: 2px;
+}
+
+.cargo-city {
+  font-weight: 700;
+  line-height: 1.15;
+}
+
+.cargo-date {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.cargo-sep {
+  color: var(--muted);
+  font-weight: 700;
+  padding-top: 2px;
+}
+
+.cargo-bottom {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 12px;
+}
+
+.cargo-bottom strong {
+  color: var(--text);
+  font-weight: 700;
+}
+
+.contact-phone {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  width: 100%;
+}
+
 .pill {
   display: inline-flex;
   align-items: center;
@@ -203,11 +252,61 @@ input:focus, textarea:focus {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  position: sticky;
+  top: 0;
+  z-index: 60;
+  background: var(--card);
   padding: 12px;
   border-bottom: 1px solid var(--border);
 }
 .modal-body { padding: 12px; }
 
+.cargo-detail-header {
+  display: grid;
+  gap: 10px;
+}
+
+.cargo-detail-header-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+}
+
+.cargo-detail-title {
+  font-weight: 800;
+  font-size: 18px;
+  line-height: 1.2;
+}
+
+.cargo-detail-id {
+  font-size: 14px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.cargo-detail-header-right {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.cargo-detail-price {
+  font-size: 18px;
+}
+
+.cargo-detail-points {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 10px;
+  display: grid;
+  gap: 8px;
+  background: rgba(0, 0, 0, 0.12);
+}
+
+.cargo-detail-point-label {
+  font-size: 12px;
+}
+
 .dev-auth.hidden { display: none; }
 .dev-auth { padding: 0 14px 18px; max-width: 860px; margin: 0 auto; }
-

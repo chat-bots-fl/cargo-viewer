@@ -1,11 +1,34 @@
-<div class="cargo-card" data-cargo-open="{{ cargo.id }}">
+<div class="cargo-card" data-cargo-open="{{ cargo.cargo_id|default:cargo.id }}">
   <div class="cargo-top">
-    <div class="cargo-route">{{ cargo.route }}</div>
-    <div class="cargo-price">{{ cargo.price }}</div>
+    <div class="cargo-route">
+      <div class="cargo-locations">
+        <div class="cargo-location">
+          <div class="cargo-city">{{ cargo.route_from|default:cargo.title }}</div>
+          {% if cargo.loading_date %}<div class="cargo-date">{{ cargo.loading_date|date:"j b" }}</div>{% endif %}
+        </div>
+        <div class="cargo-sep">→</div>
+        <div class="cargo-location">
+          <div class="cargo-city">{{ cargo.route_to }}</div>
+          {% if cargo.unloading_date %}<div class="cargo-date">{{ cargo.unloading_date|date:"j b" }}</div>{% endif %}
+        </div>
+      </div>
+    </div>
+    <div class="cargo-price">{{ cargo.price_display|default:cargo.price }}</div>
   </div>
-  <div style="display:flex;gap:8px;flex-wrap:wrap;">
-    {% if cargo.date %}<span class="pill">📅 {{ cargo.date }}</span>{% endif %}
-    {% if cargo.wv %}<span class="pill">⚖️ {{ cargo.wv }}</span>{% endif %}
-    {% for p in cargo.pills %}<span class="pill">{{ p }}</span>{% endfor %}
+
+  <div class="cargo-bottom">
+    <div class="cargo-attrs-left">
+      {% if cargo.truck_type or cargo.wv_display %}
+        <div class="muted">
+          {% if cargo.truck_type %}Тип кузова <strong>{{ cargo.truck_type }}</strong>{% endif %}
+          {% if cargo.wv_display %}{% if cargo.truck_type %} · {% endif %}<strong>{{ cargo.wv_display }}</strong>{% endif %}
+        </div>
+      {% endif %}
+    </div>
+    <div class="cargo-attrs-right">
+      {% if cargo.loading_type %}
+        <div class="muted">Тип погруз <strong>{{ cargo.loading_type }}</strong></div>
+      {% endif %}
+    </div>
   </div>
 </div>
