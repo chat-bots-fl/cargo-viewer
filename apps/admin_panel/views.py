@@ -4,14 +4,25 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from django.db.models import Q
+from django.core.cache import cache
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import redirect, render
 from django.utils import timezone
 
+from apps.admin_panel.cache_diagnostics import (
+    clear_user_cargo_cache,
+    format_cache_value,
+    get_cache_ttl_seconds,
+    iter_cache_keys,
+    summarize_cargo_list_cache,
+)
+from apps.auth.models import TelegramSession
+from apps.auth.services import SessionService
 from apps.audit.models import AuditLog
 from apps.auth.decorators import require_admin
 from apps.core.decorators import rate_limit
 from apps.feature_flags.models import FeatureFlag, SystemSetting
+from apps.integrations.cargotech_auth import CargoTechAuthService
 from apps.payments.models import Payment
 from apps.payments.services import PaymentService
 from apps.promocodes.models import PromoCode
@@ -398,3 +409,185 @@ def audit_log_view(request: HttpRequest) -> HttpResponse:
     """
     logs = AuditLog.objects.select_related("user").all().order_by("-created_at")[:300]
     return render(request, "admin_panel/audit_log.html", {"logs": logs})
+
+
+"""
+GOAL: Show cache diagnostics dashboard with per-session cache inspection tools.
+
+PARAMETERS:
+  request: HttpRequest - Admin-only request - Optional query filters (q, include_revoked)
+
+RETURNS:
+  HttpResponse - Rendered cache diagnostics page - HTTP 200
+
+RAISES:
+  None
+
+GUARANTEES:
+  - Admin-only access (staff/superuser)
+  - Does not call external services (read-only diagnostics)
+"""
+@require_admin
+@rate_limit(requests_per_minute=100, endpoint_type="admin")
+def cache_diagnostics_view(request: HttpRequest) -> HttpResponse:
+    """
+    List Telegram sessions and show whether cache session binding and cargo caches exist per user.
+    """
+    query = str(request.GET.get("q") or "").strip()
+    include_revoked = str(request.GET.get("include_revoked") or "").strip() in {"1", "true", "yes", "on"}
+
+    qs = TelegramSession.objects.select_related("user", "user__driverprofile").all().order_by("-created_at")
+    if not include_revoked:
+        qs = qs.filter(revoked_at__isnull=True)
+
+    if query:
+        q_filters = Q(user__username__icontains=query) | Q(user__email__icontains=query)
+        if query.isdigit():
+            q_int = int(query)
+            q_filters |= Q(user_id=q_int) | Q(user__driverprofile__telegram_user_id=q_int)
+        qs = qs.filter(q_filters)
+
+    sessions = qs[:200]
+    session_rows: list[dict[str, Any]] = []
+    for session in sessions:
+        telegram_user_id: int | None = None
+        telegram_username: str | None = None
+        try:
+            dp = session.user.driverprofile  # type: ignore[attr-defined]
+            telegram_user_id = int(getattr(dp, "telegram_user_id", 0)) or None
+            telegram_username = str(getattr(dp, "telegram_username", "") or "").strip() or None
+        except Exception:
+            telegram_user_id = None
+            telegram_username = None
+
+        driver_cache_key = SessionService.CACHE_KEY_FMT.format(user_id=session.user_id)
+        cached_sid = cache.get(driver_cache_key)
+        cached_ttl = get_cache_ttl_seconds(driver_cache_key)
+        sid_matches = bool(cached_sid and str(cached_sid) == str(session.session_id))
+
+        has_cargo_cache = False
+        try:
+            has_cargo_cache = bool(iter_cache_keys(f"user:{session.user_id}:cargos:*", limit=1))
+        except Exception:
+            has_cargo_cache = False
+
+        session_rows.append(
+            {
+                "session": session,
+                "telegram_user_id": telegram_user_id,
+                "telegram_username": telegram_username,
+                "driver_cache_key": driver_cache_key,
+                "cached_sid": cached_sid,
+                "cached_ttl": cached_ttl,
+                "sid_matches": sid_matches,
+                "has_cargo_cache": has_cargo_cache,
+            }
+        )
+
+    cargotech_token = cache.get(CargoTechAuthService.CACHE_KEY)
+    cargotech_token_ttl = get_cache_ttl_seconds(CargoTechAuthService.CACHE_KEY)
+
+    return render(
+        request,
+        "admin_panel/cache_diagnostics.html",
+        {
+            "query": query,
+            "include_revoked": include_revoked,
+            "session_rows": session_rows,
+            "cargotech_token_present": bool(cargotech_token),
+            "cargotech_token_ttl": cargotech_token_ttl,
+        },
+    )
+
+
+"""
+GOAL: Show per-session cache details and allow clearing cargo cache for the session owner.
+
+PARAMETERS:
+  request: HttpRequest - Admin-only request - GET renders; POST performs cache actions
+  session_id: str - TelegramSession.session_id (UUID) - Must be non-empty
+
+RETURNS:
+  HttpResponse - Rendered session cache detail page - HTTP 200/404
+
+RAISES:
+  None
+
+GUARANTEES:
+  - Admin-only access (staff/superuser)
+  - Cache reset only affects cargo keys for the session's user
+"""
+@require_admin
+@rate_limit(requests_per_minute=100, endpoint_type="admin")
+def cache_diagnostics_session_view(request: HttpRequest, session_id: str) -> HttpResponse:
+    """
+    Render session details plus related cache keys (list/detail), with reset actions.
+    """
+    session_id = str(session_id).strip()
+    session = (
+        TelegramSession.objects.select_related("user", "user__driverprofile")
+        .filter(session_id=session_id)
+        .order_by("-created_at")
+        .first()
+    )
+    if not session:
+        return HttpResponse("Session not found", status=404)
+
+    telegram_user_id: int | None = None
+    telegram_username: str | None = None
+    try:
+        dp = session.user.driverprofile  # type: ignore[attr-defined]
+        telegram_user_id = int(getattr(dp, "telegram_user_id", 0)) or None
+        telegram_username = str(getattr(dp, "telegram_username", "") or "").strip() or None
+    except Exception:
+        telegram_user_id = None
+        telegram_username = None
+
+    message: str | None = None
+    if request.method == "POST":
+        action = str(request.POST.get("action") or "").strip()
+        if action == "clear_user_cargo_cache":
+            include_details = bool(request.POST.get("include_details"))
+            result = clear_user_cargo_cache(user_id=int(session.user_id), include_details=include_details)
+            message = (
+                f"Deleted list keys: {result.get('list_keys_deleted', 0)}, "
+                f"detail keys: {result.get('detail_keys_deleted', 0)}"
+            )
+
+    user_id = int(session.user_id)
+    driver_cache_key = SessionService.CACHE_KEY_FMT.format(user_id=user_id)
+    cached_sid = cache.get(driver_cache_key)
+    cached_ttl = get_cache_ttl_seconds(driver_cache_key)
+    sid_matches = bool(cached_sid and str(cached_sid) == str(session.session_id))
+
+    cargo_list_keys = iter_cache_keys(f"user:{user_id}:cargos:*", limit=200)
+    cargo_list_key_rows: list[dict[str, Any]] = []
+    for index, key in enumerate(cargo_list_keys):
+        ttl = get_cache_ttl_seconds(key)
+        summary: dict[str, Any] = {"cards_count": None, "meta_size": None, "sample_cargo_ids": []}
+        if index < 50:
+            summary = summarize_cargo_list_cache(cache.get(key))
+        cargo_list_key_rows.append({"key": key, "ttl": ttl, "summary": summary})
+
+    selected_key = str(request.GET.get("key") or "").strip()
+    selected_value: str | None = None
+    if selected_key and (selected_key == driver_cache_key or selected_key in cargo_list_keys):
+        selected_value = format_cache_value(cache.get(selected_key))
+
+    return render(
+        request,
+        "admin_panel/cache_diagnostics_session.html",
+        {
+            "session": session,
+            "telegram_user_id": telegram_user_id,
+            "telegram_username": telegram_username,
+            "message": message,
+            "driver_cache_key": driver_cache_key,
+            "cached_sid": cached_sid,
+            "cached_ttl": cached_ttl,
+            "sid_matches": sid_matches,
+            "cargo_list_key_rows": cargo_list_key_rows,
+            "selected_key": selected_key,
+            "selected_value": selected_value,
+        },
+    )

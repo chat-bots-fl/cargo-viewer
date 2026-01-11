@@ -1,0 +1,95 @@
+{% extends "admin_panel/base.html" %}
+{% block body %}
+  <section class="card">
+    <div class="card-title">Диагностика кэша: сессия</div>
+    <div class="muted" style="margin-bottom:10px;">
+      <a class="link" href="{% url 'admin_panel_cache_diagnostics' %}">← назад</a>
+    </div>
+
+    {% if message %}
+      <div class="muted" style="margin-bottom:10px;">{{ message }}</div>
+    {% endif %}
+
+    <div style="display:grid;gap:6px;">
+      <div><strong>User:</strong> #{{ session.user_id }} {{ session.user.username }}</div>
+      {% if telegram_user_id %}<div><strong>Telegram:</strong> {{ telegram_user_id }}{% if telegram_username %} (@{{ telegram_username }}){% endif %}</div>{% endif %}
+      <div><strong>Session ID:</strong> {{ session.session_id }}</div>
+      <div class="muted">created: {{ session.created_at }} · expires: {{ session.expires_at }} · revoked: {{ session.revoked_at }}</div>
+      {% if session.ip_address %}<div class="muted">ip: {{ session.ip_address }}</div>{% endif %}
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="card-title">Сессия в кэше</div>
+    <div class="muted">Key: <code>{{ driver_cache_key }}</code></div>
+    <div style="margin-top:6px;">
+      <strong>cached sid:</strong>
+      {% if cached_sid %}{{ cached_sid }}{% else %}—{% endif %}
+      {% if cached_ttl %}<span class="muted">(TTL: {{ cached_ttl }}s)</span>{% endif %}
+      <span class="muted">
+        {% if cached_sid %}
+          · {% if sid_matches %}match{% else %}mismatch{% endif %}
+        {% endif %}
+      </span>
+    </div>
+    <div style="margin-top:8px;">
+      <a class="link" href="?key={{ driver_cache_key|urlencode }}">Показать значение</a>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="card-title">Действия</div>
+    <form method="post">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="clear_user_cargo_cache" />
+      <label style="display:flex;gap:8px;align-items:center;margin-bottom:10px;">
+        <input type="checkbox" name="include_details" value="1" checked />
+        Сбрасывать также детали грузов (по спискам)
+      </label>
+      <button class="btn" type="submit">Сбросить кэш грузов для пользователя</button>
+    </form>
+  </section>
+
+  <section class="card">
+    <div class="card-title">Ключи кэша списков грузов</div>
+    <div class="muted" style="margin-bottom:10px;">
+      Показаны первые 200 ключей. Для первых 50 — вычисляется краткая сводка.
+    </div>
+    <table style="width:100%;border-collapse:collapse;">
+      <thead>
+        <tr>
+          <th style="text-align:left;">Key</th>
+          <th style="text-align:left;">TTL</th>
+          <th style="text-align:left;">Cards</th>
+          <th style="text-align:left;">Size</th>
+          <th style="text-align:left;">Sample IDs</th>
+          <th style="text-align:left;">View</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in cargo_list_key_rows %}
+          <tr>
+            <td class="muted" style="font-size:12px;">{{ row.key }}</td>
+            <td class="muted">{% if row.ttl %}{{ row.ttl }}s{% else %}—{% endif %}</td>
+            <td class="muted">{{ row.summary.cards_count }}</td>
+            <td class="muted">{{ row.summary.meta_size }}</td>
+            <td class="muted" style="font-size:12px;">
+              {% for cid in row.summary.sample_cargo_ids %}{{ cid }}{% if not forloop.last %}, {% endif %}{% endfor %}
+            </td>
+            <td><a class="link" href="?key={{ row.key|urlencode }}">Показать</a></td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="6" class="muted">Ключи не найдены.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+
+  {% if selected_value %}
+    <section class="card">
+      <div class="card-title">Значение: <span class="muted">{{ selected_key }}</span></div>
+      <pre style="white-space:pre-wrap;word-break:break-word;margin:0;">{{ selected_value }}</pre>
+    </section>
+  {% endif %}
+{% endblock %}
+

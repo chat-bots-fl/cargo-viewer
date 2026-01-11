@@ -16,3 +16,21 @@ staticfiles/
 
 # Logs
 logs/*.log
+
+# Test + coverage artifacts
+.pytest_cache/
+htmlcov/
+.coverage
+coverage.xml
+
+# Local dev logs
+django.log
+
+# Local HAR captures may contain tokens/PII
+har/
+
+# Codex/terminal scratch files
+$null
+
+# Local notes
+plans/LOCAL_SETUP.md

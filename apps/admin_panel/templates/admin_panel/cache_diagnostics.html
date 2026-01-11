@@ -1,0 +1,81 @@
+{% extends "admin_panel/base.html" %}
+{% block body %}
+  <section class="card">
+    <div class="card-title">Диагностика кэша</div>
+    <div class="muted" style="margin-bottom:10px;">
+      Режим предназначен для проверки корректности кэширования данных, загружаемых с сайта-источника.
+    </div>
+    <form method="get" class="filters">
+      <div class="row" style="margin-bottom:10px;">
+        <label>Поиск (username, user_id, telegram_id)</label>
+        <input name="q" value="{{ query }}" placeholder="например: 12345 или ivan" />
+      </div>
+      <label style="display:flex;gap:8px;align-items:center;margin-bottom:10px;">
+        <input type="checkbox" name="include_revoked" value="1" {% if include_revoked %}checked{% endif %} />
+        Показать отозванные сессии
+      </label>
+      <button class="btn" type="submit">Применить</button>
+    </form>
+  </section>
+
+  <section class="card">
+    <div class="card-title">CargoTech API</div>
+    <div>
+      <strong>Token в кэше:</strong>
+      {% if cargotech_token_present %}да{% else %}нет{% endif %}
+      {% if cargotech_token_ttl %}<span class="muted">(TTL: {{ cargotech_token_ttl }}s)</span>{% endif %}
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="card-title">Сессии пользователей</div>
+    <table style="width:100%;border-collapse:collapse;">
+      <thead>
+        <tr>
+          <th style="text-align:left;">User</th>
+          <th style="text-align:left;">Telegram</th>
+          <th style="text-align:left;">Session</th>
+          <th style="text-align:left;">Created</th>
+          <th style="text-align:left;">Expires</th>
+          <th style="text-align:left;">Cache sid</th>
+          <th style="text-align:left;">Cargo cache</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in session_rows %}
+          <tr>
+            <td>
+              <div><strong>#{{ row.session.user_id }}</strong> {{ row.session.user.username }}</div>
+            </td>
+            <td class="muted">
+              {% if row.telegram_user_id %}{{ row.telegram_user_id }}{% endif %}
+              {% if row.telegram_username %}<span class="muted">(@{{ row.telegram_username }})</span>{% endif %}
+            </td>
+            <td>
+              <div class="muted" style="font-size:12px;">{{ row.session.session_id }}</div>
+              <a class="link" href="{% url 'admin_panel_cache_diagnostics_session' row.session.session_id %}">Открыть</a>
+            </td>
+            <td class="muted">{{ row.session.created_at }}</td>
+            <td class="muted">{{ row.session.expires_at }}</td>
+            <td class="muted">
+              {% if row.cached_sid %}
+                {% if row.sid_matches %}
+                  ok
+                {% else %}
+                  mismatch
+                {% endif %}
+                {% if row.cached_ttl %} ({{ row.cached_ttl }}s){% endif %}
+              {% else %}
+                missing
+              {% endif %}
+            </td>
+            <td class="muted">{% if row.has_cargo_cache %}есть{% else %}нет{% endif %}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="7" class="muted">Сессии не найдены.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+{% endblock %}
+
