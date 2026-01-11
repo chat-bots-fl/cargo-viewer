@@ -14,33 +14,51 @@
       <form id="filters-form" class="filters">
         <div class="row">
           <label>Погрузка (город)</label>
-          <input id="start_city_query" type="text" placeholder="Начните ввод…" autocomplete="off" />
+          <div class="input-with-clear">
+            <input id="start_city_query" type="text" placeholder="Начните ввод…" autocomplete="off" />
+            <button type="button" class="input-clear" data-clear-target="start_city_query" aria-label="Сбросить" title="Сбросить">×</button>
+          </div>
           <input id="start_point_id" name="start_point_id" type="hidden" />
           <input id="start_point_type" name="start_point_type" type="hidden" />
           <div id="start_city_suggest" class="suggest"></div>
         </div>
         <div class="row">
           <label>Выгрузка (город)</label>
-          <input id="finish_city_query" type="text" placeholder="Начните ввод…" autocomplete="off" />
+          <div class="input-with-clear">
+            <input id="finish_city_query" type="text" placeholder="Начните ввод…" autocomplete="off" />
+            <button type="button" class="input-clear" data-clear-target="finish_city_query" aria-label="Сбросить" title="Сбросить">×</button>
+          </div>
           <input id="finish_point_id" name="finish_point_id" type="hidden" />
           <input id="finish_point_type" name="finish_point_type" type="hidden" />
           <div id="finish_city_suggest" class="suggest"></div>
         </div>
         <div class="row">
           <label>Дата</label>
-          <input id="start_date" name="start_date" type="date" />
+          <div class="input-with-clear">
+            <input id="start_date" name="start_date" type="date" />
+            <button type="button" class="input-clear" data-clear-target="start_date" aria-label="Сбросить" title="Сбросить">×</button>
+          </div>
         </div>
         <div class="row">
           <label>Вес/Объём</label>
-          <input id="weight_volume" name="weight_volume" type="text" placeholder="например 15-65 или 1.5-9" />
+          <div class="input-with-clear">
+            <input id="weight_volume" name="weight_volume" type="text" placeholder="например 15-65 или 1.5-9" />
+            <button type="button" class="input-clear" data-clear-target="weight_volume" aria-label="Сбросить" title="Сбросить">×</button>
+          </div>
         </div>
         <div class="row">
           <label>Тип погрузки (id через запятую)</label>
-          <input id="load_types" name="load_types" type="text" placeholder="например 1,2,3" />
+          <div class="input-with-clear">
+            <input id="load_types" name="load_types" type="text" placeholder="например 1,2,3" />
+            <button type="button" class="input-clear" data-clear-target="load_types" aria-label="Сбросить" title="Сбросить">×</button>
+          </div>
         </div>
         <div class="row">
           <label>Тип кузова (id через запятую)</label>
-          <input id="truck_types" name="truck_types" type="text" placeholder="например 1,2,4" />
+          <div class="input-with-clear">
+            <input id="truck_types" name="truck_types" type="text" placeholder="например 1,2,4" />
+            <button type="button" class="input-clear" data-clear-target="truck_types" aria-label="Сбросить" title="Сбросить">×</button>
+          </div>
         </div>
         <div class="actions">
           <button type="button" id="apply-filters" class="btn">Применить</button>

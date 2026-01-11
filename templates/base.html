@@ -6,13 +6,13 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>CargoTech Driver WebApp</title>
-    <link rel="stylesheet" href="{% static 'css/main.css' %}" />
+    <link rel="stylesheet" href="{% static 'css/main.css' %}?v=2" />
     <link rel="stylesheet" href="{% static 'css/spinner.css' %}" />
     <link rel="stylesheet" href="{% static 'css/lazy-loading.css' %}" />
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script src="https://unpkg.com/htmx.org@1.9.12/dist/htmx.min.js"></script>
     <script src="{% static 'js/app.js' %}?v=5"></script>
-    <script src="{% static 'js/filters.js' %}?v=5" defer></script>
+    <script src="{% static 'js/filters.js' %}?v=6" defer></script>
     {% if lazy_image_enabled %}
       <script>
         window.LAZY_LOADING_CONFIG = {% lazy_loading_config %};

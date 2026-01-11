@@ -94,6 +94,43 @@ input:focus, textarea:focus {
   border-color: rgba(255, 122, 0, 0.6);
 }
 
+.input-with-clear {
+  position: relative;
+}
+
+.input-with-clear input,
+.input-with-clear textarea {
+  padding-right: 46px;
+}
+
+.input-clear {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: rgba(0, 0, 0, 0.25);
+  color: var(--muted);
+  font-size: 18px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.input-clear:hover {
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.input-clear:focus {
+  outline: none;
+  border-color: rgba(255, 122, 0, 0.6);
+}
+
 .actions {
   display: flex;
   gap: 10px;

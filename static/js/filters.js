@@ -85,6 +85,23 @@ document.addEventListener("DOMContentLoaded", () => {
   const startSuggest = "start_city_suggest";
   const finishSuggest = "finish_city_suggest";
 
+  document.querySelectorAll("[data-clear-target]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const targetId = btn.getAttribute("data-clear-target");
+      if (!targetId) return;
+      const input = document.getElementById(targetId);
+      if (!input) return;
+
+      input.value = "";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+
+      if (targetId === "start_city_query") document.getElementById(startSuggest)?.replaceChildren();
+      if (targetId === "finish_city_query") document.getElementById(finishSuggest)?.replaceChildren();
+      if (typeof input.focus === "function") input.focus();
+    });
+  });
+
   const onStartInput = debounce(async () => {
     const q = (startQ?.value || "").trim();
     if (q.length < 2) return renderSuggest(startSuggest, [], () => {});
