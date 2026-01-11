@@ -892,9 +892,9 @@ def build_query(filters: dict) → api_params:
     {
         'filter[user_id]': 0,
         'filter[start_point_id]': 62,
-        'filter[start_point_type]': 1,
+        'filter[start_point_type]': 2,
         'filter[finish_point_id]': 39,
-        'filter[finish_point_type]': 1,
+        'filter[finish_point_type]': 2,
         'filter[start_point_radius]': 50,
         'filter[finish_point_radius]': 50,
         'filter[start_date]': '2026-01-01',
@@ -1013,7 +1013,7 @@ SECURITY:
 
 ```
 REQUEST:
-GET https://api.cargotech.pro/v2/cargos/views?limit=20&offset=0&include=contacts&filter[mode]=my&filter[user_id]=0&filter[start_point_id]=62&filter[start_point_type]=1&filter[start_point_radius]=50&filter[finish_point_id]=39&filter[finish_point_type]=1&filter[finish_point_radius]=50&filter[start_date]=2026-01-01&filter[wv]=15-65
+GET https://api.cargotech.pro/v2/cargos/views?limit=20&offset=0&include=contacts&filter[mode]=my&filter[user_id]=0&filter[start_point_id]=62&filter[start_point_type]=2&filter[start_point_radius]=50&filter[finish_point_id]=39&filter[finish_point_type]=2&filter[finish_point_radius]=50&filter[start_date]=2026-01-01&filter[wv]=15-65
 Authorization: Bearer {token}
 
 RESPONSE (200 OK):
@@ -1055,9 +1055,9 @@ NOTE:
 
 FILTERS:
 - filter[start_point_id]: 62
-- filter[start_point_type]: 1
+- filter[start_point_type]: 2
 - filter[finish_point_id]: 39
-- filter[finish_point_type]: 1
+- filter[finish_point_type]: 2
 - filter[start_point_radius]: 50
 - filter[finish_point_radius]: 50
 - filter[start_date]: "2026-01-01"

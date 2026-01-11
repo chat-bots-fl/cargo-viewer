@@ -12,13 +12,38 @@ function qs(params) {
 }
 
 async function fetchCities(query) {
-  const token = localStorage.getItem("session_token") || "";
+  // Keep this token lookup in sync with CargoApp.getToken() (localStorage + cookie fallback).
+  let token = localStorage.getItem("session_token") || "";
+  if (!token) {
+    const match = document.cookie.match(new RegExp("(^| )session_token=([^;]*)"));
+    token = match ? decodeURIComponent(match[2]) : "";
+  }
   const resp = await fetch(`/api/dictionaries/points?name=${encodeURIComponent(query)}`, {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   });
   if (!resp.ok) return [];
   const data = await resp.json().catch(() => ({}));
   return Array.isArray(data.data) ? data.data : [];
+}
+
+async function resolveCityToPoint(query) {
+  const q = String(query || "").trim();
+  if (!q) return null;
+  const items = await fetchCities(q);
+  if (!items.length) return null;
+
+  const qLower = q.toLowerCase();
+  const exact = items.find((it) => String(it?.name || "").trim().toLowerCase() === qLower);
+  if (exact) return exact;
+
+  const startsWithComma = items.find((it) => String(it?.name || "").trim().toLowerCase().startsWith(`${qLower},`));
+  if (startsWithComma) return startsWithComma;
+
+  const sortedByNameLen = items
+    .filter((it) => it && typeof it === "object")
+    .slice()
+    .sort((a, b) => String(a.name || "").length - String(b.name || "").length);
+  return sortedByNameLen[0] || items[0];
 }
 
 function renderSuggest(containerId, items, onPick) {
@@ -53,7 +78,9 @@ document.addEventListener("DOMContentLoaded", () => {
   const startQ = document.getElementById("start_city_query");
   const finishQ = document.getElementById("finish_city_query");
   const startId = document.getElementById("start_point_id");
+  const startType = document.getElementById("start_point_type");
   const finishId = document.getElementById("finish_point_id");
+  const finishType = document.getElementById("finish_point_type");
 
   const startSuggest = "start_city_suggest";
   const finishSuggest = "finish_city_suggest";
@@ -65,6 +92,7 @@ document.addEventListener("DOMContentLoaded", () => {
     renderSuggest(startSuggest, items, (it) => {
       if (startQ) startQ.value = it.name;
       if (startId) startId.value = it.id;
+      if (startType) startType.value = it.type;
       renderSuggest(startSuggest, [], () => {});
     });
   }, 250);
@@ -76,20 +104,52 @@ document.addEventListener("DOMContentLoaded", () => {
     renderSuggest(finishSuggest, items, (it) => {
       if (finishQ) finishQ.value = it.name;
       if (finishId) finishId.value = it.id;
+      if (finishType) finishType.value = it.type;
       renderSuggest(finishSuggest, [], () => {});
     });
   }, 250);
 
-  startQ?.addEventListener("input", onStartInput);
-  finishQ?.addEventListener("input", onFinishInput);
+  startQ?.addEventListener("input", () => {
+    if (startId) startId.value = "";
+    if (startType) startType.value = "";
+    onStartInput();
+  });
+  finishQ?.addEventListener("input", () => {
+    if (finishId) finishId.value = "";
+    if (finishType) finishType.value = "";
+    onFinishInput();
+  });
 
   const applyBtn = document.getElementById("apply-filters");
   const resetBtn = document.getElementById("reset-filters");
 
-  applyBtn?.addEventListener("click", () => {
+  applyBtn?.addEventListener("click", async () => {
+    const startCityText = document.getElementById("start_city_query")?.value;
+    const finishCityText = document.getElementById("finish_city_query")?.value;
+
+    // If user typed a city but didn't pick from suggestions, try to resolve to point_id automatically.
+    if (startCityText && startId && !startId.value) {
+      const resolved = await resolveCityToPoint(startCityText).catch(() => null);
+      if (resolved) {
+        startId.value = resolved.id;
+        if (startQ) startQ.value = resolved.name;
+        if (startType) startType.value = resolved.type;
+      }
+    }
+    if (finishCityText && finishId && !finishId.value) {
+      const resolved = await resolveCityToPoint(finishCityText).catch(() => null);
+      if (resolved) {
+        finishId.value = resolved.id;
+        if (finishQ) finishQ.value = resolved.name;
+        if (finishType) finishType.value = resolved.type;
+      }
+    }
+
     const params = {
       start_point_id: document.getElementById("start_point_id")?.value,
+      start_point_type: document.getElementById("start_point_type")?.value,
       finish_point_id: document.getElementById("finish_point_id")?.value,
+      finish_point_type: document.getElementById("finish_point_type")?.value,
       start_date: document.getElementById("start_date")?.value,
       weight_volume: document.getElementById("weight_volume")?.value,
       load_types: document.getElementById("load_types")?.value,
@@ -99,7 +159,18 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   resetBtn?.addEventListener("click", () => {
-    ["start_city_query", "finish_city_query", "start_point_id", "finish_point_id", "start_date", "weight_volume", "load_types", "truck_types"].forEach(
+    [
+      "start_city_query",
+      "finish_city_query",
+      "start_point_id",
+      "start_point_type",
+      "finish_point_id",
+      "finish_point_type",
+      "start_date",
+      "weight_volume",
+      "load_types",
+      "truck_types",
+    ].forEach(
       (id) => {
         const el = document.getElementById(id);
         if (el) el.value = "";

@@ -144,14 +144,14 @@ def cargo_list_partial(request):
     Validate filters, build CargoTech query params, fetch cached list, and render list template.
     """
     try:
-        validated = validate_query_params(CargoListRequest, dict(request.GET))
+        validated = validate_query_params(CargoListRequest, request.GET.dict())
         limit = validated.limit
         offset = validated.offset
     except AppValidationError as exc:
         raise exc
 
     try:
-        filters = FilterService.validate_filters(dict(request.GET))
+        filters = FilterService.validate_filters(request.GET.dict())
         api_params = FilterService.build_query(filters, limit=limit, offset=offset)
         user_id = int(request.user.id)
         result = CargoService.get_cargos(user_id=user_id, api_params=api_params)

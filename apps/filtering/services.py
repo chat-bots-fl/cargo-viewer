@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 from datetime import date
 from typing import Any
@@ -10,6 +11,8 @@ from django.core.exceptions import ValidationError
 from apps.core.schemas import FilterRequest
 from apps.core.validation import validate_request_body
 from apps.integrations.cargotech_client import CargoAPIClient
+
+logger = logging.getLogger(__name__)
 
 
 class FilterService:
@@ -125,11 +128,11 @@ class FilterService:
 
         if "start_point_id" in filters:
             params["filter[start_point_id]"] = int(filters["start_point_id"])
-            params["filter[start_point_type]"] = 1
+            params["filter[start_point_type]"] = int(filters.get("start_point_type") or 2)
             params["filter[start_point_radius]"] = 50
         if "finish_point_id" in filters:
             params["filter[finish_point_id]"] = int(filters["finish_point_id"])
-            params["filter[finish_point_type]"] = 1
+            params["filter[finish_point_type]"] = int(filters.get("finish_point_type") or 2)
             params["filter[finish_point_radius]"] = 50
 
         if "start_date" in filters:
@@ -173,16 +176,23 @@ class DictionaryService:
         """
         q = str(query or "").strip().lower()
         cache_key = f"cities:{q}:{int(limit)}"
-        cached = cache.get(cache_key)
-        if cached:
+        try:
+            cached = cache.get(cache_key)
+        except Exception as exc:
+            logger.warning("Cities cache get failed: %s", exc)
+            cached = None
+
+        if cached is not None:
             return cached
 
         try:
             payload = CargoAPIClient.search_cities(q, limit=limit, offset=0)
             items = payload.get("data") or []
             result = items if isinstance(items, list) else []
-            cache.set(cache_key, result, timeout=DictionaryService.CACHE_TTL_SECONDS)
+            try:
+                cache.set(cache_key, result, timeout=DictionaryService.CACHE_TTL_SECONDS)
+            except Exception as exc:
+                logger.warning("Cities cache set failed: %s", exc)
             return result
         except Exception:
             return []
-

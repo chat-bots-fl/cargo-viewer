@@ -97,8 +97,8 @@ const cities = await searchCities('Моск');
 
 Добавлены в документацию параметры, которые используются в 100% запросов:
 - `filter[user_id]`: 0
-- `filter[start_point_type]`: 1
-- `filter[finish_point_type]`: 1
+- `filter[start_point_type]`: 2
+- `filter[finish_point_type]`: 2
 
 ### 3. Authorization mechanism verified (v3.2.1)
 

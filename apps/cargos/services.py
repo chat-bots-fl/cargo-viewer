@@ -291,8 +291,13 @@ class CargoService:
 
         filter_hash = _stable_hash(api_params)
         cache_key = f"user:{user_id}:cargos:{cls.CACHE_KEY_VERSION_LIST}:{filter_hash}"
-        cached = cache.get(cache_key)
-        if cached:
+        try:
+            cached = cache.get(cache_key)
+        except Exception as exc:
+            logger.warning("Cargo list cache get failed: %s", exc)
+            cached = None
+
+        if cached is not None:
             return cached
 
         try:
@@ -300,7 +305,10 @@ class CargoService:
             data = payload.get("data") or []
             cards = [cls.format_cargo_card(item) for item in data] if isinstance(data, list) else []
             result = {"cards": cards, "meta": payload.get("meta") or {}}
-            cache.set(cache_key, result, timeout=cls.CACHE_TIMEOUT_LIST)
+            try:
+                cache.set(cache_key, result, timeout=cls.CACHE_TIMEOUT_LIST)
+            except Exception as exc:
+                logger.warning("Cargo list cache set failed: %s", exc)
             return result
         except Exception as exc:
             logger.warning("Cargo list fetch failed: %s", exc)
@@ -334,15 +342,23 @@ class CargoService:
             raise ValueError("cargo_id is required")
 
         cache_key = f"cargo:{cargo_id}:detail:{cls.CACHE_KEY_VERSION_DETAIL}"
-        cached = cache.get(cache_key)
-        if cached:
+        try:
+            cached = cache.get(cache_key)
+        except Exception as exc:
+            logger.warning("Cargo detail cache get failed: %s", exc)
+            cached = None
+
+        if cached is not None:
             return cached
 
         try:
             payload = CargoAPIClient.fetch_cargo_detail(cargo_id)
             data = payload.get("data") or {}
             result = cls._format_detail(data)
-            cache.set(cache_key, result, timeout=cls.CACHE_TIMEOUT_DETAIL)
+            try:
+                cache.set(cache_key, result, timeout=cls.CACHE_TIMEOUT_DETAIL)
+            except Exception as exc:
+                logger.warning("Cargo detail cache set failed: %s", exc)
             return result
         except Exception as exc:
             logger.warning("Cargo detail fetch failed: %s", exc)

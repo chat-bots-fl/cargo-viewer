@@ -387,7 +387,7 @@ class FilterServiceTests(TestCase):
         
         params = FilterService.build_query(filters)
         
-        self.assertEqual(params["filter[start_point_type]"], 1)
+        self.assertEqual(params["filter[start_point_type]"], 2)
         self.assertEqual(params["filter[start_point_radius]"], 50)
     
     def test_build_query_invalid_limit(self):

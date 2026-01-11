@@ -42,7 +42,9 @@ class CargoListRequest(BaseModel):
       limit: int - Number of items per page - 1 to 100, default 20
       offset: int - Pagination offset - >= 0, default 0
       start_point_id: Optional[int] - Starting location filter - Must be positive
+      start_point_type: Optional[int] - CargoTech point type for start_point_id - Must be positive
       finish_point_id: Optional[int] - Ending location filter - Must be positive
+      finish_point_type: Optional[int] - CargoTech point type for finish_point_id - Must be positive
       start_date: Optional[date] - Filter by start date - ISO format YYYY-MM-DD
       weight_volume: Optional[str] - Weight-volume filter "{weight}-{volume}"
       load_types: Optional[str] - CSV of load type IDs - Format "1,2,3"
@@ -68,7 +70,9 @@ class CargoListRequest(BaseModel):
     limit: int = Field(default=20, ge=1, le=100, description="Number of items per page (1-100)")
     offset: int = Field(default=0, ge=0, description="Pagination offset (>= 0)")
     start_point_id: Optional[int] = Field(default=None, gt=0, description="Starting location ID")
+    start_point_type: Optional[int] = Field(default=None, gt=0, description="Starting location point type")
     finish_point_id: Optional[int] = Field(default=None, gt=0, description="Ending location ID")
+    finish_point_type: Optional[int] = Field(default=None, gt=0, description="Ending location point type")
     start_date: Optional[date] = Field(default=None, description="Start date (YYYY-MM-DD)")
     weight_volume: Optional[str] = Field(default=None, description="Weight-volume filter (e.g. '15-65')")
     load_types: Optional[str] = Field(default=None, description="CSV of load type IDs")
@@ -176,7 +180,9 @@ class FilterRequest(BaseModel):
 
     PARAMETERS:
       start_point_id: Optional[int] - Starting location filter - Must be positive
+      start_point_type: Optional[int] - CargoTech point type for start_point_id - Must be positive
       finish_point_id: Optional[int] - Ending location filter - Must be positive
+      finish_point_type: Optional[int] - CargoTech point type for finish_point_id - Must be positive
       start_date: Optional[date] - Filter by start date - ISO format YYYY-MM-DD
       weight_volume: Optional[str] - Weight-volume filter "{weight}-{volume}"
       load_types: Optional[str] - CSV of load type IDs - Format "1,2,3"
@@ -199,7 +205,9 @@ class FilterRequest(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 
     start_point_id: Optional[int] = Field(default=None, gt=0, description="Starting location ID")
+    start_point_type: Optional[int] = Field(default=None, gt=0, description="Starting location point type")
     finish_point_id: Optional[int] = Field(default=None, gt=0, description="Ending location ID")
+    finish_point_type: Optional[int] = Field(default=None, gt=0, description="Ending location point type")
     start_date: Optional[date] = Field(default=None, description="Start date (YYYY-MM-DD)")
     weight_volume: Optional[str] = Field(default=None, description="Weight-volume filter (e.g. '15-65')")
     load_types: Optional[str] = Field(default=None, description="CSV of load type IDs")

@@ -107,8 +107,8 @@ Accept: application/json
 |---|---|---|---|---|
 | `filter[start_point_id]` | int | нет | ID города загрузки | 62 |
 | `filter[finish_point_id]` | int | нет | ID города выгрузки | 39 |
-| `filter[start_point_type]` | int | **да*** | Тип точки отправления (1=город) | 1 |
-| `filter[finish_point_type]` | int | **да*** | Тип точки назначения (1=город) | 1 |
+| `filter[start_point_type]` | int | **да*** | Тип точки отправления (2=город) | 2 |
+| `filter[finish_point_type]` | int | **да*** | Тип точки назначения (2=город) | 2 |
 | `filter[start_point_radius]` | int | нет | Радиус от точки загрузки (км) | 50 |
 | `filter[finish_point_radius]` | int | нет | Радиус от точки выгрузки (км) | 50 |
 | `filter[start_date]` | date | нет | Дата загрузки (YYYY-MM-DD) | 2026-01-01 |
@@ -162,12 +162,12 @@ def build_cargo_list_params(filters: dict) -> dict:
     # Добавляем пользовательские фильтры
     if filters.get("start_point_id"):
         params["filter[start_point_id]"] = filters["start_point_id"]
-        params["filter[start_point_type]"] = 1  # обязательно при start_point_id
+        params["filter[start_point_type]"] = 2  # обязательно при start_point_id
         params["filter[start_point_radius]"] = filters.get("start_point_radius", 50)
 
     if filters.get("finish_point_id"):
         params["filter[finish_point_id]"] = filters["finish_point_id"]
-        params["filter[finish_point_type]"] = 1
+        params["filter[finish_point_type]"] = 2
         params["filter[finish_point_radius]"] = filters.get("finish_point_radius", 50)
 
     if filters.get("start_date"):

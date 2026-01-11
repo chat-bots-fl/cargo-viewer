@@ -69,7 +69,10 @@ class CargoTechAuthService:
         except Exception as exc:
             raise CargoTechAuthError("CargoTech login response missing data.token") from exc
 
-        cache.set(cls.CACHE_KEY, token, timeout=int(getattr(settings, "CARGOTECH_TOKEN_CACHE_TTL", 86400)))
+        try:
+            cache.set(cls.CACHE_KEY, token, timeout=int(getattr(settings, "CARGOTECH_TOKEN_CACHE_TTL", 86400)))
+        except Exception as exc:
+            logger.warning("CargoTech token cache set failed: %s", exc)
         logger.info("CargoTech token cached")
         return token
 
@@ -93,7 +96,11 @@ class CargoTechAuthService:
         """
         Prefer cached token; fallback to login with env credentials.
         """
-        cached = cache.get(cls.CACHE_KEY)
+        try:
+            cached = cache.get(cls.CACHE_KEY)
+        except Exception as exc:
+            logger.warning("CargoTech token cache get failed: %s", exc)
+            cached = None
         if cached:
             return str(cached)
 
@@ -124,7 +131,10 @@ class CargoTechAuthService:
         """
         Delete cached token key.
         """
-        cache.delete(cls.CACHE_KEY)
+        try:
+            cache.delete(cls.CACHE_KEY)
+        except Exception as exc:
+            logger.warning("CargoTech token cache delete failed: %s", exc)
 
     """
     GOAL: Build Authorization headers for CargoTech API requests.
@@ -147,4 +157,3 @@ class CargoTechAuthService:
         Fetch token and build standard JSON headers.
         """
         return {"Authorization": f"Bearer {cls.get_token()}", "Accept": "application/json"}
-
