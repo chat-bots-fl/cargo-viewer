@@ -90,7 +90,7 @@ label {
   color: var(--muted);
 }
 
-input, textarea {
+input, textarea, select {
   width: 100%;
   padding: 10px 12px;
   border-radius: 10px;
@@ -100,7 +100,7 @@ input, textarea {
   outline: none;
 }
 
-input:focus, textarea:focus {
+input:focus, textarea:focus, select:focus {
   border-color: rgba(255, 122, 0, 0.6);
 }
 
@@ -109,8 +109,26 @@ input:focus, textarea:focus {
 }
 
 .input-with-clear input,
-.input-with-clear textarea {
+.input-with-clear textarea,
+.input-with-clear select {
   padding-right: 46px;
+}
+
+.input-with-clear.has-dropdown select {
+  padding-right: 78px;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.input-with-clear.has-dropdown::after {
+  content: "▾";
+  position: absolute;
+  right: 46px;
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+  color: var(--muted);
+  font-size: 14px;
 }
 
 .input-clear {

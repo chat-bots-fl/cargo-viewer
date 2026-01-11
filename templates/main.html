@@ -41,8 +41,17 @@
         </div>
         <div class="row">
           <label>Вес/Объём</label>
-          <div class="input-with-clear">
-            <input id="weight_volume" name="weight_volume" type="text" placeholder="например 15-65 или 1.5-9" />
+          <div class="input-with-clear has-dropdown">
+            <select id="weight_volume" name="weight_volume">
+              <option value="">Любой</option>
+              <option value="20-83">20т/83м³</option>
+              <option value="15-65">15т/65м³</option>
+              <option value="10-54">10т/54м³</option>
+              <option value="7.5-45">7.5т/45м³</option>
+              <option value="5-36">5т/36м³</option>
+              <option value="3-16">3т/16м³</option>
+              <option value="1.5-9">1.5т/9м³</option>
+            </select>
             <button type="button" class="input-clear" data-clear-target="weight_volume" aria-label="Сбросить" title="Сбросить">×</button>
           </div>
         </div>
