@@ -70,6 +70,10 @@ body {
   font-size: 12px;
 }
 
+.cargo-count-bottom {
+  margin: 10px 0 0;
+}
+
 .link {
   color: var(--accent-2);
   text-decoration: none;
