@@ -2,6 +2,9 @@
 
 const CargoApp = (() => {
   const tokenKey = "session_token";
+  let modalDefaults = null;
+  let activeModalRequestId = null;
+  let modalRequestSeq = 0;
 
   function getToken() {
     // Try localStorage first, fallback to cookie
@@ -166,11 +169,37 @@ const CargoApp = (() => {
 
   function openModalWithUrl(url) {
     const root = document.getElementById("modal-root");
+    const header = document.getElementById("modal-header");
     const body = document.getElementById("modal-body");
-    if (!root || !body) return;
+    if (!root || !header || !body) return;
+
+    modalRequestSeq += 1;
+    activeModalRequestId = modalRequestSeq;
+
+    if (modalDefaults) {
+      header.className = modalDefaults.headerClassName;
+      header.removeAttribute("hx-swap-oob");
+      header.innerHTML = modalDefaults.headerHtml;
+
+      body.className = modalDefaults.bodyClassName;
+      body.innerHTML = modalDefaults.bodyHtml;
+
+      const modal = root.querySelector(".modal");
+      if (modal) modal.scrollTop = 0;
+    }
     root.classList.remove("hidden");
     root.setAttribute("aria-hidden", "false");
-    htmx.ajax("GET", url, { target: "#modal-body", swap: "innerHTML" });
+
+    let requestUrl = url;
+    try {
+      const u = new URL(url, window.location.origin);
+      u.searchParams.set("_rid", String(activeModalRequestId));
+      requestUrl = `${u.pathname}${u.search}${u.hash}`;
+    } catch (e) {
+      requestUrl = `${url}${url.includes("?") ? "&" : "?"}_rid=${encodeURIComponent(String(activeModalRequestId))}`;
+    }
+
+    htmx.ajax("GET", requestUrl, { target: "#modal-body", swap: "innerHTML" });
   }
 
   function closeModal() {
@@ -186,6 +215,33 @@ const CargoApp = (() => {
       if (!el) return;
       const close = el.closest && el.closest("[data-modal-close='1']");
       if (close) closeModal();
+    });
+
+    document.body.addEventListener("htmx:beforeSwap", (evt) => {
+      const target = evt.detail && evt.detail.target ? evt.detail.target : null;
+      if (!target || (target.id !== "modal-body" && target.id !== "modal-header")) return;
+
+      const root = document.getElementById("modal-root");
+      if (root && root.classList.contains("hidden")) {
+        evt.detail.shouldSwap = false;
+        return;
+      }
+
+      const xhr = evt.detail && evt.detail.xhr ? evt.detail.xhr : null;
+      const responseUrl = xhr && xhr.responseURL ? String(xhr.responseURL) : "";
+      if (!responseUrl) return;
+
+      let rid = null;
+      try {
+        rid = new URL(responseUrl, window.location.origin).searchParams.get("_rid");
+      } catch (e) {
+        rid = null;
+      }
+
+      if (!rid || activeModalRequestId === null) return;
+      if (String(activeModalRequestId) !== String(rid)) {
+        evt.detail.shouldSwap = false;
+      }
     });
   }
 
@@ -208,6 +264,16 @@ const CargoApp = (() => {
   }
 
   async function bootstrap() {
+    const header = document.getElementById("modal-header");
+    const body = document.getElementById("modal-body");
+    if (header && body) {
+      modalDefaults = {
+        headerClassName: header.className,
+        headerHtml: header.innerHTML,
+        bodyClassName: body.className,
+        bodyHtml: body.innerHTML,
+      };
+    }
     configureHtmxAuth();
     bindModal();
     bindCargoClicks();
