@@ -3,7 +3,7 @@
   <section class="card">
     <div class="card-title">Диагностика кэша: сессия</div>
     <div class="muted" style="margin-bottom:10px;">
-      <a class="link" href="{% url 'admin_panel_cache_diagnostics' %}">← назад</a>
+      <a class="link" href="{% url cache_diagnostics_url_name %}">← назад</a>
     </div>
 
     {% if message %}
@@ -92,4 +92,3 @@
     </section>
   {% endif %}
 {% endblock %}
-

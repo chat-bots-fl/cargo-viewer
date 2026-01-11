@@ -4,6 +4,7 @@ from django.conf import settings
 from django.contrib import admin
 from django.urls import path, include
 
+from apps.admin_panel import views as admin_panel_views
 from apps.admin_panel.urls import urlpatterns as admin_panel_urls
 from apps.auth import views as auth_views
 from apps.cargos import views as cargo_views
@@ -59,6 +60,16 @@ api_v3_patterns = [
 ]
 
 urlpatterns = [
+    path(
+        "admin/cache-diagnostics/",
+        admin.site.admin_view(admin_panel_views.cache_diagnostics_view),
+        name="admin_cache_diagnostics",
+    ),
+    path(
+        "admin/cache-diagnostics/session/<uuid:session_id>/",
+        admin.site.admin_view(admin_panel_views.cache_diagnostics_session_view),
+        name="admin_cache_diagnostics_session",
+    ),
     path("admin/", admin.site.urls),
     path("", cargo_views.webapp_home, name="webapp_home"),
     # Health checks
@@ -105,4 +116,3 @@ if getattr(settings, "OPENAPI_ENABLED", True):
         path("api/docs/", SpectacularSwaggerView.as_view(url_name="schema"), name="swagger-ui"),
         path("api/redoc/", SpectacularRedocView.as_view(url_name="schema"), name="redoc"),
     ]
-

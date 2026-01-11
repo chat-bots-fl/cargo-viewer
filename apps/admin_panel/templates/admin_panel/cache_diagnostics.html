@@ -53,7 +53,7 @@
             </td>
             <td>
               <div class="muted" style="font-size:12px;">{{ row.session.session_id }}</div>
-              <a class="link" href="{% url 'admin_panel_cache_diagnostics_session' row.session.session_id %}">Открыть</a>
+              <a class="link" href="{% url cache_diagnostics_session_url_name row.session.session_id %}">Открыть</a>
             </td>
             <td class="muted">{{ row.session.created_at }}</td>
             <td class="muted">{{ row.session.expires_at }}</td>
@@ -78,4 +78,3 @@
     </table>
   </section>
 {% endblock %}
-

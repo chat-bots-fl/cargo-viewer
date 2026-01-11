@@ -435,6 +435,7 @@ def cache_diagnostics_view(request: HttpRequest) -> HttpResponse:
     """
     query = str(request.GET.get("q") or "").strip()
     include_revoked = str(request.GET.get("include_revoked") or "").strip() in {"1", "true", "yes", "on"}
+    use_django_admin_urls = str(request.path or "").startswith("/admin/")
 
     qs = TelegramSession.objects.select_related("user", "user__driverprofile").all().order_by("-created_at")
     if not include_revoked:
@@ -496,6 +497,12 @@ def cache_diagnostics_view(request: HttpRequest) -> HttpResponse:
             "session_rows": session_rows,
             "cargotech_token_present": bool(cargotech_token),
             "cargotech_token_ttl": cargotech_token_ttl,
+            "cache_diagnostics_url_name": "admin_cache_diagnostics"
+            if use_django_admin_urls
+            else "admin_panel_cache_diagnostics",
+            "cache_diagnostics_session_url_name": "admin_cache_diagnostics_session"
+            if use_django_admin_urls
+            else "admin_panel_cache_diagnostics_session",
         },
     )
 
@@ -524,6 +531,7 @@ def cache_diagnostics_session_view(request: HttpRequest, session_id: str) -> Htt
     Render session details plus related cache keys (list/detail), with reset actions.
     """
     session_id = str(session_id).strip()
+    use_django_admin_urls = str(request.path or "").startswith("/admin/")
     session = (
         TelegramSession.objects.select_related("user", "user__driverprofile")
         .filter(session_id=session_id)
@@ -589,5 +597,8 @@ def cache_diagnostics_session_view(request: HttpRequest, session_id: str) -> Htt
             "cargo_list_key_rows": cargo_list_key_rows,
             "selected_key": selected_key,
             "selected_value": selected_value,
+            "cache_diagnostics_url_name": "admin_cache_diagnostics"
+            if use_django_admin_urls
+            else "admin_panel_cache_diagnostics",
         },
     )
