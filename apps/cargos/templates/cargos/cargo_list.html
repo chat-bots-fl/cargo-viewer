@@ -11,6 +11,8 @@
     <button
       class="btn btn-secondary"
       hx-get="/api/cargos/?{% if base_query %}{{ base_query }}&{% endif %}limit={{ limit }}&offset={{ next_offset }}"
+      hx-trigger="revealed once, click"
+      hx-sync="this:drop"
       hx-target="#cargo-cards"
       hx-swap="beforeend"
     >
@@ -18,4 +20,3 @@
     </button>
   {% endif %}
 </div>
-
