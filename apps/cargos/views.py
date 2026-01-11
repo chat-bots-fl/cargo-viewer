@@ -160,8 +160,14 @@ def cargo_list_partial(request):
 
     cards = result.get("cards") or []
     meta = result.get("meta") or {}
-    size = int(meta.get("size") or 0)
-    next_offset = offset + limit if size == limit else None
+    total_size = int(meta.get("size") or 0)
+    page_size = len(cards)
+    if page_size <= 0:
+        next_offset = None
+    elif total_size > 0:
+        next_offset = (offset + page_size) if (offset + page_size) < total_size else None
+    else:
+        next_offset = (offset + page_size) if page_size == limit else None
 
     qs = request.GET.copy()
     qs.pop("offset", None)
