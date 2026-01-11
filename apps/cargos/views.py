@@ -162,6 +162,9 @@ def cargo_list_partial(request):
     meta = result.get("meta") or {}
     total_size = int(meta.get("size") or 0)
     page_size = len(cards)
+    loaded_count = (offset + page_size) if page_size > 0 else int(offset)
+    if total_size > 0:
+        loaded_count = min(total_size, loaded_count)
     if page_size <= 0:
         next_offset = None
     elif total_size > 0:
@@ -184,6 +187,8 @@ def cargo_list_partial(request):
             "limit": limit,
             "offset": offset,
             "next_offset": next_offset,
+            "loaded_count": loaded_count,
+            "total_count": total_size,
             "base_query": base_query,
         },
     )

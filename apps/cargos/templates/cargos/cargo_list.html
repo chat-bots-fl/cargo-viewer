@@ -1,3 +1,5 @@
+<div id="cargo-count" class="muted cargo-count" hx-swap-oob="true">{{ loaded_count }} из {{ total_count }}</div>
+
 <div id="cargo-cards">
   {% for cargo in cards %}
     {% include "cargos/components/cargo_card.html" with cargo=cargo %}

@@ -2,6 +2,8 @@
   {% include "cargos/components/cargo_card.html" with cargo=cargo %}
 {% endfor %}
 
+<div id="cargo-count" class="muted cargo-count" hx-swap-oob="true">{{ loaded_count }} из {{ total_count }}</div>
+
 <div id="load-more" hx-swap-oob="true">
   {% if next_offset %}
     <button
