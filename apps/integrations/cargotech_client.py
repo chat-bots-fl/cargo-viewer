@@ -266,3 +266,46 @@ class CargoAPIClient:
             params={"filter[name]": str(query or ""), "limit": int(limit), "offset": int(offset)},
         )
 
+    """
+    GOAL: Fetch truck types dictionary for filters from CargoTech.
+
+    PARAMETERS:
+      None
+
+    RETURNS:
+      dict[str, Any] - Response payload with {data, meta} - Never None
+
+    RAISES:
+      requests.HTTPError: For HTTP errors
+
+    GUARANTEES:
+      - Calls /v1/dictionaries/truck_types
+    """
+    @classmethod
+    def fetch_truck_types(cls) -> dict[str, Any]:
+        """
+        GET /v1/dictionaries/truck_types.
+        """
+        return cls.request("GET", "/v1/dictionaries/truck_types")
+
+    """
+    GOAL: Fetch load types dictionary for filters from CargoTech.
+
+    PARAMETERS:
+      None
+
+    RETURNS:
+      dict[str, Any] - Response payload with {data, meta} - Never None
+
+    RAISES:
+      requests.HTTPError: For HTTP errors
+
+    GUARANTEES:
+      - Calls /v1/dictionaries/load_types
+    """
+    @classmethod
+    def fetch_load_types(cls) -> dict[str, Any]:
+        """
+        GET /v1/dictionaries/load_types.
+        """
+        return cls.request("GET", "/v1/dictionaries/load_types")

@@ -25,6 +25,8 @@ api_v1_patterns = [
     path("cargos/<str:cargo_id>/", cargo_views.cargo_detail_partial, name="v1_cargo_detail_partial"),
     # Dictionaries
     path("dictionaries/points", filtering_views.search_cities, name="v1_search_cities"),
+    path("dictionaries/load_types", filtering_views.load_types, name="v1_load_types"),
+    path("dictionaries/truck_types", filtering_views.truck_types, name="v1_truck_types"),
     # Payments + promos
     path("payments/create", payments_views.create_payment, name="v1_create_payment"),
     path("payments/webhook", payments_views.yookassa_webhook, name="v1_yookassa_webhook"),
@@ -39,6 +41,8 @@ api_v2_patterns = [
     path("cargos/<str:cargo_id>/", cargo_views.cargo_detail_partial, name="v2_cargo_detail_partial"),
     # Dictionaries
     path("dictionaries/points", filtering_views.search_cities, name="v2_search_cities"),
+    path("dictionaries/load_types", filtering_views.load_types, name="v2_load_types"),
+    path("dictionaries/truck_types", filtering_views.truck_types, name="v2_truck_types"),
     # Payments + promos
     path("payments/create", payments_views.create_payment, name="v2_create_payment"),
     path("payments/webhook", payments_views.yookassa_webhook, name="v2_yookassa_webhook"),
@@ -53,6 +57,8 @@ api_v3_patterns = [
     path("cargos/<str:cargo_id>/", cargo_views.cargo_detail_partial, name="v3_cargo_detail_partial"),
     # Dictionaries
     path("dictionaries/points", filtering_views.search_cities, name="v3_search_cities"),
+    path("dictionaries/load_types", filtering_views.load_types, name="v3_load_types"),
+    path("dictionaries/truck_types", filtering_views.truck_types, name="v3_truck_types"),
     # Payments + promos
     path("payments/create", payments_views.create_payment, name="v3_create_payment"),
     path("payments/webhook", payments_views.yookassa_webhook, name="v3_yookassa_webhook"),
@@ -98,6 +104,8 @@ urlpatterns += [
     path("api/cargos/<str:cargo_id>/", cargo_views.cargo_detail_partial, name="cargo_detail_partial"),
     # Dictionaries (legacy)
     path("api/dictionaries/points", filtering_views.search_cities, name="search_cities"),
+    path("api/dictionaries/load_types", filtering_views.load_types, name="load_types"),
+    path("api/dictionaries/truck_types", filtering_views.truck_types, name="truck_types"),
     # Payments + promos (legacy)
     path("api/payments/create", payments_views.create_payment, name="create_payment"),
     path("api/payments/webhook", payments_views.yookassa_webhook, name="yookassa_webhook"),

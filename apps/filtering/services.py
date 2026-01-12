@@ -151,6 +151,8 @@ class FilterService:
 
 class DictionaryService:
     CACHE_TTL_SECONDS = 86400
+    TRUCK_TYPES_CACHE_KEY = "truck_types:all"
+    LOAD_TYPES_CACHE_KEY = "load_types:all"
 
     """
     GOAL: Search cities by name with Redis caching for autocomplete.
@@ -193,6 +195,92 @@ class DictionaryService:
                 cache.set(cache_key, result, timeout=DictionaryService.CACHE_TTL_SECONDS)
             except Exception as exc:
                 logger.warning("Cities cache set failed: %s", exc)
+            return result
+        except Exception:
+            return []
+
+    """
+    GOAL: Fetch truck types dictionary with caching for the WebApp filters.
+
+    PARAMETERS:
+      None
+
+    RETURNS:
+      list[dict[str, Any]] - Items like {id, name, short_name} - Never None
+
+    RAISES:
+      None (API/cache errors return empty list)
+
+    GUARANTEES:
+      - Cached for ~24h under a stable key
+      - Returns empty list when upstream is unavailable
+    """
+    @staticmethod
+    def list_truck_types() -> list[dict[str, Any]]:
+        """
+        Cache-through dictionary fetch from CargoTech /v1/dictionaries/truck_types.
+        """
+        cache_key = DictionaryService.TRUCK_TYPES_CACHE_KEY
+        try:
+            cached = cache.get(cache_key)
+        except Exception as exc:
+            logger.warning("Truck types cache get failed: %s", exc)
+            cached = None
+
+        if cached is not None:
+            return cached
+
+        try:
+            payload = CargoAPIClient.fetch_truck_types()
+            items = payload.get("data") or []
+            result = items if isinstance(items, list) else []
+            try:
+                cache.set(cache_key, result, timeout=DictionaryService.CACHE_TTL_SECONDS)
+            except Exception as exc:
+                logger.warning("Truck types cache set failed: %s", exc)
+            return result
+        except Exception:
+            return []
+
+    """
+    GOAL: Fetch load types dictionary with caching for the WebApp filters.
+
+    PARAMETERS:
+      None
+
+    RETURNS:
+      list[dict[str, Any]] - Items like {id, name, short_name} - Never None
+
+    RAISES:
+      None (API/cache errors return empty list)
+
+    GUARANTEES:
+      - Cached for ~24h under a stable key
+      - Returns empty list when upstream is unavailable
+    """
+    @staticmethod
+    def list_load_types() -> list[dict[str, Any]]:
+        """
+        Cache-through dictionary fetch from CargoTech /v1/dictionaries/load_types.
+        """
+        cache_key = DictionaryService.LOAD_TYPES_CACHE_KEY
+        try:
+            cached = cache.get(cache_key)
+        except Exception as exc:
+            logger.warning("Load types cache get failed: %s", exc)
+            cached = None
+
+        if cached is not None:
+            return cached
+
+        try:
+            payload = CargoAPIClient.fetch_load_types()
+            items = payload.get("data") or []
+            result = items if isinstance(items, list) else []
+            try:
+                cache.set(cache_key, result, timeout=DictionaryService.CACHE_TTL_SECONDS)
+            except Exception as exc:
+                logger.warning("Load types cache set failed: %s", exc)
             return result
         except Exception:
             return []

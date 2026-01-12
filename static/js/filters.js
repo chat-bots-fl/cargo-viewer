@@ -11,14 +11,38 @@ function qs(params) {
   return usp.toString();
 }
 
-async function fetchCities(query) {
-  // Keep this token lookup in sync with CargoApp.getToken() (localStorage + cookie fallback).
+function getSessionToken() {
   let token = localStorage.getItem("session_token") || "";
   if (!token) {
     const match = document.cookie.match(new RegExp("(^| )session_token=([^;]*)"));
     token = match ? decodeURIComponent(match[2]) : "";
   }
+  return token;
+}
+
+async function fetchCities(query) {
+  const token = getSessionToken();
   const resp = await fetch(`/api/dictionaries/points?name=${encodeURIComponent(query)}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!resp.ok) return [];
+  const data = await resp.json().catch(() => ({}));
+  return Array.isArray(data.data) ? data.data : [];
+}
+
+async function fetchTruckTypes() {
+  const token = getSessionToken();
+  const resp = await fetch("/api/dictionaries/truck_types", {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!resp.ok) return [];
+  const data = await resp.json().catch(() => ({}));
+  return Array.isArray(data.data) ? data.data : [];
+}
+
+async function fetchLoadTypes() {
+  const token = getSessionToken();
+  const resp = await fetch("/api/dictionaries/load_types", {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   });
   if (!resp.ok) return [];
@@ -58,7 +82,7 @@ function renderSuggest(containerId, items, onPick) {
   items.slice(0, 10).forEach((it) => {
     const div = document.createElement("div");
     div.className = "suggest-item";
-    div.textContent = `${it.name} (id: ${it.id})`;
+    div.textContent = String(it.name || "");
     div.addEventListener("click", () => onPick(it));
     list.appendChild(div);
   });
@@ -82,8 +106,274 @@ document.addEventListener("DOMContentLoaded", () => {
   const finishId = document.getElementById("finish_point_id");
   const finishType = document.getElementById("finish_point_type");
 
+  const loadTypesDropdown = document.getElementById("load-types-dropdown");
+  const loadTypesToggle = document.getElementById("load-types-toggle");
+  const loadTypesMenu = document.getElementById("load-types-menu");
+  const loadTypesValue = document.getElementById("load_types");
+
+  const truckTypesDropdown = document.getElementById("truck-types-dropdown");
+  const truckTypesToggle = document.getElementById("truck-types-toggle");
+  const truckTypesMenu = document.getElementById("truck-types-menu");
+  const truckTypesValue = document.getElementById("truck_types");
+
   const startSuggest = "start_city_suggest";
   const finishSuggest = "finish_city_suggest";
+
+  let loadTypesItems = null;
+  let truckTypesItems = null;
+
+  function parseCsvIds(value) {
+    const raw = String(value || "");
+    const parts = raw
+      .split(",")
+      .map((s) => s.trim())
+      .filter((s) => /^\d+$/.test(s));
+
+    const seen = new Set();
+    const out = [];
+    parts.forEach((id) => {
+      if (seen.has(id)) return;
+      seen.add(id);
+      out.push(id);
+    });
+    return out;
+  }
+
+  function formatLoadTypesLabel(ids) {
+    if (!ids.length) return { text: "Любой", title: "" };
+
+    if (!Array.isArray(loadTypesItems) || !loadTypesItems.length) {
+      return { text: `Выбрано: ${ids.length}`, title: ids.join(",") };
+    }
+
+    const byId = new Map(loadTypesItems.map((it) => [String(it.id), it]));
+    const selected = ids.map((id) => byId.get(String(id))).filter(Boolean);
+    if (!selected.length) return { text: `Выбрано: ${ids.length}`, title: ids.join(",") };
+
+    const full = selected.map((it) => it.name || it.short_name || String(it.id)).filter(Boolean);
+    const short = selected.map((it) => it.short_name || it.name || String(it.id)).filter(Boolean);
+
+    return { text: short.join(", "), title: full.join(", ") };
+  }
+
+  function formatTruckTypesLabel(ids) {
+    if (!ids.length) return { text: "Любой", title: "" };
+
+    if (!Array.isArray(truckTypesItems) || !truckTypesItems.length) {
+      return { text: `Выбрано: ${ids.length}`, title: ids.join(",") };
+    }
+
+    const byId = new Map(truckTypesItems.map((it) => [String(it.id), it]));
+    const selected = ids.map((id) => byId.get(String(id))).filter(Boolean);
+    if (!selected.length) return { text: `Выбрано: ${ids.length}`, title: ids.join(",") };
+
+    const full = selected.map((it) => it.name || it.short_name || String(it.id)).filter(Boolean);
+    const short = selected.map((it) => it.short_name || it.name || String(it.id)).filter(Boolean);
+
+    return { text: short.join(", "), title: full.join(", ") };
+  }
+
+  function syncLoadTypesUIFromValue() {
+    const selectedIds = parseCsvIds(loadTypesValue?.value);
+    const { text, title } = formatLoadTypesLabel(selectedIds);
+    if (loadTypesToggle) {
+      loadTypesToggle.textContent = text;
+      loadTypesToggle.title = title;
+    }
+
+    if (!loadTypesMenu || !Array.isArray(loadTypesItems) || !loadTypesItems.length) return;
+    const selectedSet = new Set(selectedIds);
+    loadTypesMenu.querySelectorAll("input[type='checkbox']").forEach((el) => {
+      el.checked = selectedSet.has(String(el.value));
+    });
+  }
+
+  function syncTruckTypesUIFromValue() {
+    const selectedIds = parseCsvIds(truckTypesValue?.value);
+    const { text, title } = formatTruckTypesLabel(selectedIds);
+    if (truckTypesToggle) {
+      truckTypesToggle.textContent = text;
+      truckTypesToggle.title = title;
+    }
+
+    if (!truckTypesMenu || !Array.isArray(truckTypesItems) || !truckTypesItems.length) return;
+    const selectedSet = new Set(selectedIds);
+    truckTypesMenu.querySelectorAll("input[type='checkbox']").forEach((el) => {
+      el.checked = selectedSet.has(String(el.value));
+    });
+  }
+
+  function renderLoadTypesMenu(items) {
+    if (!loadTypesMenu) return;
+    const fragment = document.createDocumentFragment();
+
+    items.forEach((it) => {
+      const row = document.createElement("label");
+      row.className = "dropdown-item";
+
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.value = String(it.id);
+      cb.addEventListener("change", () => {
+        const selected = Array.from(loadTypesMenu.querySelectorAll("input[type='checkbox']:checked")).map((el) => el.value);
+        if (loadTypesValue) loadTypesValue.value = selected.join(",");
+        syncLoadTypesUIFromValue();
+      });
+
+      const span = document.createElement("span");
+      span.textContent = it.name || it.short_name || String(it.id);
+
+      row.appendChild(cb);
+      row.appendChild(span);
+      fragment.appendChild(row);
+    });
+
+    loadTypesMenu.replaceChildren(fragment);
+  }
+
+  function renderTruckTypesMenu(items) {
+    if (!truckTypesMenu) return;
+    const fragment = document.createDocumentFragment();
+
+    items.forEach((it) => {
+      const row = document.createElement("label");
+      row.className = "dropdown-item";
+
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.value = String(it.id);
+      cb.addEventListener("change", () => {
+        const selected = Array.from(truckTypesMenu.querySelectorAll("input[type='checkbox']:checked")).map(
+          (el) => el.value
+        );
+        if (truckTypesValue) truckTypesValue.value = selected.join(",");
+        syncTruckTypesUIFromValue();
+      });
+
+      const span = document.createElement("span");
+      span.textContent = it.name || it.short_name || String(it.id);
+
+      row.appendChild(cb);
+      row.appendChild(span);
+      fragment.appendChild(row);
+    });
+
+    truckTypesMenu.replaceChildren(fragment);
+  }
+
+  function openLoadTypesMenu() {
+    if (!loadTypesMenu || !loadTypesToggle) return;
+    loadTypesMenu.hidden = false;
+    loadTypesToggle.setAttribute("aria-expanded", "true");
+  }
+
+  function closeLoadTypesMenu() {
+    if (!loadTypesMenu || !loadTypesToggle) return;
+    loadTypesMenu.hidden = true;
+    loadTypesToggle.setAttribute("aria-expanded", "false");
+  }
+
+  function openTruckTypesMenu() {
+    if (!truckTypesMenu || !truckTypesToggle) return;
+    truckTypesMenu.hidden = false;
+    truckTypesToggle.setAttribute("aria-expanded", "true");
+  }
+
+  function closeTruckTypesMenu() {
+    if (!truckTypesMenu || !truckTypesToggle) return;
+    truckTypesMenu.hidden = true;
+    truckTypesToggle.setAttribute("aria-expanded", "false");
+  }
+
+  async function ensureLoadTypesLoaded() {
+    if (!loadTypesMenu || loadTypesItems) return;
+    loadTypesMenu.innerHTML = '<div class="muted" style="padding:10px 12px;">Загрузка…</div>';
+
+    const items = await fetchLoadTypes().catch(() => []);
+    loadTypesItems = items;
+
+    if (!Array.isArray(items) || !items.length) {
+      loadTypesMenu.innerHTML = '<div class="muted" style="padding:10px 12px;">Не удалось загрузить</div>';
+      return;
+    }
+
+    renderLoadTypesMenu(items);
+    syncLoadTypesUIFromValue();
+  }
+
+  async function ensureTruckTypesLoaded() {
+    if (!truckTypesMenu || truckTypesItems) return;
+    truckTypesMenu.innerHTML = '<div class="muted" style="padding:10px 12px;">Загрузка…</div>';
+
+    const items = await fetchTruckTypes().catch(() => []);
+    truckTypesItems = items;
+
+    if (!Array.isArray(items) || !items.length) {
+      truckTypesMenu.innerHTML = '<div class="muted" style="padding:10px 12px;">Не удалось загрузить</div>';
+      return;
+    }
+
+    renderTruckTypesMenu(items);
+    syncTruckTypesUIFromValue();
+  }
+
+  loadTypesToggle?.addEventListener("click", async (evt) => {
+    evt.preventDefault();
+    evt.stopPropagation();
+
+    if (loadTypesMenu?.hidden === false) {
+      closeLoadTypesMenu();
+      return;
+    }
+
+    closeTruckTypesMenu();
+    openLoadTypesMenu();
+    await ensureLoadTypesLoaded();
+  });
+
+  loadTypesMenu?.addEventListener("click", (evt) => {
+    evt.stopPropagation();
+  });
+
+  truckTypesToggle?.addEventListener("click", async (evt) => {
+    evt.preventDefault();
+    evt.stopPropagation();
+
+    if (truckTypesMenu?.hidden === false) {
+      closeTruckTypesMenu();
+      return;
+    }
+
+    closeLoadTypesMenu();
+    openTruckTypesMenu();
+    await ensureTruckTypesLoaded();
+  });
+
+  truckTypesMenu?.addEventListener("click", (evt) => {
+    evt.stopPropagation();
+  });
+
+  document.addEventListener("click", (evt) => {
+    if (loadTypesDropdown && loadTypesMenu && loadTypesMenu.hidden === false) {
+      const target = evt.target;
+      if (!(target && loadTypesDropdown.contains(target))) {
+        closeLoadTypesMenu();
+      }
+    }
+
+    if (!truckTypesDropdown || !truckTypesMenu || truckTypesMenu.hidden) return;
+    const target = evt.target;
+    if (target && truckTypesDropdown.contains(target)) return;
+    closeTruckTypesMenu();
+  });
+
+  loadTypesValue?.addEventListener("input", syncLoadTypesUIFromValue);
+  loadTypesValue?.addEventListener("change", syncLoadTypesUIFromValue);
+  syncLoadTypesUIFromValue();
+
+  truckTypesValue?.addEventListener("input", syncTruckTypesUIFromValue);
+  truckTypesValue?.addEventListener("change", syncTruckTypesUIFromValue);
+  syncTruckTypesUIFromValue();
 
   document.querySelectorAll("[data-clear-target]").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -98,7 +388,15 @@ document.addEventListener("DOMContentLoaded", () => {
 
       if (targetId === "start_city_query") document.getElementById(startSuggest)?.replaceChildren();
       if (targetId === "finish_city_query") document.getElementById(finishSuggest)?.replaceChildren();
-      if (typeof input.focus === "function") input.focus();
+      if (targetId === "load_types") {
+        closeLoadTypesMenu();
+        loadTypesToggle?.focus();
+      } else if (targetId === "truck_types") {
+        closeTruckTypesMenu();
+        truckTypesToggle?.focus();
+      } else if (typeof input.focus === "function") {
+        input.focus();
+      }
     });
   });
 
@@ -195,6 +493,10 @@ document.addEventListener("DOMContentLoaded", () => {
     );
     document.getElementById("start_city_suggest")?.replaceChildren();
     document.getElementById("finish_city_suggest")?.replaceChildren();
+    closeLoadTypesMenu();
+    syncLoadTypesUIFromValue();
+    closeTruckTypesMenu();
+    syncTruckTypesUIFromValue();
     CargoApp.loadCargos("");
   });
 });

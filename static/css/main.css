@@ -90,7 +90,7 @@ label {
   color: var(--muted);
 }
 
-input, textarea, select {
+input:not([type="checkbox"]):not([type="radio"]), textarea, select {
   width: 100%;
   padding: 10px 12px;
   border-radius: 10px;
@@ -100,7 +100,7 @@ input, textarea, select {
   outline: none;
 }
 
-input:focus, textarea:focus, select:focus {
+input:not([type="checkbox"]):not([type="radio"]):focus, textarea:focus, select:focus {
   border-color: rgba(255, 122, 0, 0.6);
 }
 
@@ -129,6 +129,60 @@ input:focus, textarea:focus, select:focus {
   pointer-events: none;
   color: var(--muted);
   font-size: 14px;
+}
+
+.select-toggle {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: rgba(0, 0, 0, 0.2);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  min-height: 44px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.select-toggle:focus {
+  outline: none;
+  border-color: rgba(255, 122, 0, 0.6);
+}
+
+.input-with-clear.has-dropdown .select-toggle {
+  padding-right: 78px;
+}
+
+.dropdown-menu {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 6px);
+  background: rgba(18, 27, 46, 0.98);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: auto;
+  z-index: 25;
+  max-height: 280px;
+}
+
+.dropdown-item {
+  padding: 10px 12px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.dropdown-item:last-child { border-bottom: 0; }
+.dropdown-item:hover { background: rgba(255, 255, 255, 0.06); }
+
+.dropdown-item input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  margin: 0;
 }
 
 .input-clear {

@@ -56,17 +56,25 @@
           </div>
         </div>
         <div class="row">
-          <label>Тип погрузки (id через запятую)</label>
-          <div class="input-with-clear">
-            <input id="load_types" name="load_types" type="text" placeholder="например 1,2,3" />
+          <label>Тип погрузки</label>
+          <div id="load-types-dropdown" class="input-with-clear has-dropdown">
+            <input id="load_types" name="load_types" type="hidden" />
+            <button type="button" id="load-types-toggle" class="select-toggle" aria-haspopup="listbox" aria-expanded="false">Любой</button>
             <button type="button" class="input-clear" data-clear-target="load_types" aria-label="Сбросить" title="Сбросить">×</button>
+            <div id="load-types-menu" class="dropdown-menu" role="listbox" aria-multiselectable="true" hidden>
+              <div class="muted" style="padding:10px 12px;">Загрузка…</div>
+            </div>
           </div>
         </div>
         <div class="row">
-          <label>Тип кузова (id через запятую)</label>
-          <div class="input-with-clear">
-            <input id="truck_types" name="truck_types" type="text" placeholder="например 1,2,4" />
+          <label>Тип кузова</label>
+          <div id="truck-types-dropdown" class="input-with-clear has-dropdown">
+            <input id="truck_types" name="truck_types" type="hidden" />
+            <button type="button" id="truck-types-toggle" class="select-toggle" aria-haspopup="listbox" aria-expanded="false">Любой</button>
             <button type="button" class="input-clear" data-clear-target="truck_types" aria-label="Сбросить" title="Сбросить">×</button>
+            <div id="truck-types-menu" class="dropdown-menu" role="listbox" aria-multiselectable="true" hidden>
+              <div class="muted" style="padding:10px 12px;">Загрузка…</div>
+            </div>
           </div>
         </div>
         <div class="actions">
