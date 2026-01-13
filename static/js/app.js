@@ -5,6 +5,8 @@ const CargoApp = (() => {
   let modalDefaults = null;
   let activeModalRequestId = null;
   let modalRequestSeq = 0;
+  let loadMoreObserver = null;
+  let loadMoreObservedEl = null;
 
   function getToken() {
     // Try localStorage first, fallback to cookie
@@ -263,6 +265,79 @@ const CargoApp = (() => {
     });
   }
 
+  function _autoTriggerLoadMore(buttonEl) {
+    if (!buttonEl) return;
+    if (buttonEl.disabled) return;
+    if (buttonEl.classList && buttonEl.classList.contains("htmx-request")) return;
+    if (buttonEl.dataset && buttonEl.dataset.autoloadTriggered === "1") return;
+
+    buttonEl.dataset.autoloadTriggered = "1";
+    window.requestAnimationFrame(() => {
+      try {
+        buttonEl.click();
+      } catch (e) {
+      }
+    });
+  }
+
+  function _observeLoadMoreButton() {
+    const buttonEl = document.querySelector("button[data-load-more='1']");
+    if (!buttonEl) {
+      if (loadMoreObserver && loadMoreObservedEl) {
+        try {
+          loadMoreObserver.unobserve(loadMoreObservedEl);
+        } catch (e) {
+        }
+      }
+      loadMoreObservedEl = null;
+      return;
+    }
+
+    if (loadMoreObservedEl === buttonEl) return;
+
+    if (loadMoreObserver && loadMoreObservedEl) {
+      try {
+        loadMoreObserver.unobserve(loadMoreObservedEl);
+      } catch (e) {
+      }
+    }
+
+    if (!loadMoreObserver && "IntersectionObserver" in window) {
+      loadMoreObserver = new IntersectionObserver(
+        (entries) => {
+          for (const entry of entries) {
+            if (!entry.isIntersecting) continue;
+            _autoTriggerLoadMore(entry.target);
+          }
+        },
+        { root: null, rootMargin: "0px 0px 700px 0px", threshold: 0.01 }
+      );
+    }
+
+    loadMoreObservedEl = buttonEl;
+    if (loadMoreObserver) {
+      loadMoreObserver.observe(buttonEl);
+      return;
+    }
+
+    const rect = buttonEl.getBoundingClientRect();
+    const viewportH = window.innerHeight || document.documentElement.clientHeight;
+    if (rect.top <= viewportH + 700) {
+      _autoTriggerLoadMore(buttonEl);
+    }
+  }
+
+  function bindInfiniteScroll() {
+    const schedule = () => window.requestAnimationFrame(_observeLoadMoreButton);
+
+    window.addEventListener("scroll", schedule, { passive: true });
+    document.body.addEventListener("htmx:afterSwap", schedule);
+    document.body.addEventListener("htmx:afterSettle", schedule);
+    document.body.addEventListener("htmx:oobAfterSwap", schedule);
+
+    schedule();
+  }
+
   async function bootstrap() {
     const header = document.getElementById("modal-header");
     const body = document.getElementById("modal-body");
@@ -277,6 +352,7 @@ const CargoApp = (() => {
     configureHtmxAuth();
     bindModal();
     bindCargoClicks();
+    bindInfiniteScroll();
 
     try {
       await ensureSession();

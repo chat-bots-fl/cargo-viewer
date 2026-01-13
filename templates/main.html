@@ -1,7 +1,17 @@
 {% extends "base.html" %}
 {% block body %}
   <header class="app-header">
-    <div class="app-title">CargoTech Driver WebApp</div>
+    <div class="app-left">
+      <input id="mode" name="mode" type="hidden" value="my" />
+      <div id="mode-toggle" class="segmented segmented-compact" role="group" aria-label="Режим списка грузов">
+        <button type="button" class="segmented-btn is-active" data-mode-value="my" aria-pressed="true">
+          Свои
+        </button>
+        <button type="button" class="segmented-btn" data-mode-value="all" aria-pressed="false">
+          Все грузы
+        </button>
+      </div>
+    </div>
     <div class="app-meta">
       <span id="driver-name" class="muted">…</span>
       <a class="link" href="{% url 'paywall' %}">Подписка</a>
@@ -78,7 +88,13 @@
           </div>
         </div>
         <div class="actions">
-          <button type="button" id="apply-filters" class="btn">Применить</button>
+          <button type="button" id="apply-filters" class="btn" aria-busy="false">
+            <span class="btn-label">Применить</span>
+            <span class="btn-indicator" aria-hidden="true">
+              <span class="spinner spinner-sm" aria-hidden="true"></span>
+              <span>Загрузка…</span>
+            </span>
+          </button>
           <button type="button" id="reset-filters" class="btn btn-secondary">Сброс</button>
         </div>
       </form>

@@ -437,8 +437,75 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const applyBtn = document.getElementById("apply-filters");
   const resetBtn = document.getElementById("reset-filters");
+  const modeInput = document.getElementById("mode");
+  const modeToggle = document.getElementById("mode-toggle");
+
+  function setMode(value) {
+    const normalized = value === "all" ? "all" : "my";
+    const previous = modeInput ? String(modeInput.value || "") : "";
+    if (modeInput) modeInput.value = normalized;
+    if (modeToggle) modeToggle.classList.toggle("is-all", normalized === "all");
+
+    if (!modeToggle) return;
+    modeToggle.querySelectorAll("button[data-mode-value]").forEach((btn) => {
+      const isActive = btn.getAttribute("data-mode-value") === normalized;
+      btn.classList.toggle("is-active", isActive);
+      btn.setAttribute("aria-pressed", isActive ? "true" : "false");
+    });
+    return previous !== normalized;
+  }
+
+  modeToggle?.addEventListener("click", (evt) => {
+    const btn = evt.target && evt.target.closest ? evt.target.closest("button[data-mode-value]") : null;
+    if (!btn) return;
+    evt.preventDefault();
+    const changed = setMode(btn.getAttribute("data-mode-value"));
+    if (changed && applyBtn && !applyBtn.disabled) {
+      applyBtn.click();
+    }
+  });
+
+  setMode(modeInput?.value || "my");
+
+  function setApplyLoading(isLoading) {
+    if (!applyBtn) return;
+    applyBtn.disabled = Boolean(isLoading);
+    applyBtn.classList.toggle("is-loading", Boolean(isLoading));
+    applyBtn.setAttribute("aria-busy", isLoading ? "true" : "false");
+
+    if (modeToggle) {
+      modeToggle.querySelectorAll("button[data-mode-value]").forEach((btn) => {
+        btn.disabled = Boolean(isLoading);
+      });
+    }
+  }
+
+  function isCargoListRequest(evt) {
+    const target = evt?.detail?.target;
+    if (!target || !(target instanceof Element)) return false;
+    return target.id === "cargo-list";
+  }
+
+  document.body.addEventListener("htmx:afterRequest", (evt) => {
+    if (!applyBtn || !applyBtn.classList.contains("is-loading")) return;
+    if (!isCargoListRequest(evt)) return;
+    setApplyLoading(false);
+  });
+
+  document.body.addEventListener("htmx:afterSwap", (evt) => {
+    if (!applyBtn || !applyBtn.classList.contains("is-loading")) return;
+    if (!isCargoListRequest(evt)) return;
+    setApplyLoading(false);
+  });
+
+  document.body.addEventListener("htmx:responseError", (evt) => {
+    if (!applyBtn || !applyBtn.classList.contains("is-loading")) return;
+    if (!isCargoListRequest(evt)) return;
+    setApplyLoading(false);
+  });
 
   applyBtn?.addEventListener("click", async () => {
+    setApplyLoading(true);
     const startCityText = document.getElementById("start_city_query")?.value;
     const finishCityText = document.getElementById("finish_city_query")?.value;
 
@@ -469,8 +536,14 @@ document.addEventListener("DOMContentLoaded", () => {
       weight_volume: document.getElementById("weight_volume")?.value,
       load_types: document.getElementById("load_types")?.value,
       truck_types: document.getElementById("truck_types")?.value,
+      mode: document.getElementById("mode")?.value,
     };
-    CargoApp.loadCargos(qs(params));
+
+    try {
+      CargoApp.loadCargos(qs(params));
+    } catch (e) {
+      setApplyLoading(false);
+    }
   });
 
   resetBtn?.addEventListener("click", () => {
@@ -491,6 +564,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (el) el.value = "";
       }
     );
+    setMode("my");
     document.getElementById("start_city_suggest")?.replaceChildren();
     document.getElementById("finish_city_suggest")?.replaceChildren();
     closeLoadTypesMenu();

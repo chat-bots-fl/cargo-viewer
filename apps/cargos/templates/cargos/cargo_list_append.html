@@ -9,12 +9,18 @@
     <button
       class="btn btn-secondary"
       hx-get="/api/cargos/?{% if base_query %}{{ base_query }}&{% endif %}limit={{ limit }}&offset={{ next_offset }}"
-      hx-trigger="revealed once, click"
+      hx-trigger="click"
+      hx-disabled-elt="this"
       hx-sync="this:drop"
       hx-target="#cargo-cards"
       hx-swap="beforeend"
+      data-load-more="1"
     >
-      Ещё
+      <span class="load-more-label">Ещё</span>
+      <span class="load-more-indicator" aria-hidden="true">
+        <span class="spinner spinner-sm" aria-hidden="true"></span>
+        <span>Загрузка…</span>
+      </span>
     </button>
   {% endif %}
   <div class="muted cargo-count cargo-count-bottom">{{ loaded_count }} из {{ total_count }}</div>
