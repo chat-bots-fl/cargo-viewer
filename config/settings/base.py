@@ -109,6 +109,28 @@ DATABASES: dict[str, Any] = {
     }
 }
 
+DATABASE_URL = (_env("DATABASE_URL", "") or "").strip()
+if DATABASE_URL:
+    DATABASES["default"] = dj_database_url.parse(DATABASE_URL, conn_max_age=600)
+else:
+    postgres_db = (_env("POSTGRES_DB", "") or "").strip()
+    postgres_user = (_env("POSTGRES_USER", "") or "").strip()
+    postgres_password = _env("POSTGRES_PASSWORD", "") or ""
+    if postgres_db and postgres_user and postgres_password:
+        postgres_host = (_env("DB_HOST", "") or _env("POSTGRES_HOST", "") or "").strip()
+        postgres_port = (_env("DB_PORT", "") or _env("POSTGRES_PORT", "") or "").strip()
+        in_docker = Path("/.dockerenv").exists()
+
+        DATABASES["default"] = {
+            "ENGINE": "django.db.backends.postgresql",
+            "NAME": postgres_db,
+            "USER": postgres_user,
+            "PASSWORD": postgres_password,
+            "HOST": postgres_host or ("db" if in_docker else "localhost"),
+            "PORT": postgres_port or "5432",
+            "CONN_MAX_AGE": 600,
+        }
+
 AUTH_PASSWORD_VALIDATORS: list[dict[str, str]] = []
 
 LANGUAGE_CODE = "ru-ru"

@@ -44,6 +44,9 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
+# Docker Compose command (detected at runtime)
+DOCKER_COMPOSE_CMD=()
+
 ################################################################################
 # Logging Functions
 ################################################################################
@@ -143,6 +146,101 @@ log_success() {
     local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
     echo -e "${GREEN}[SUCCESS]${NC} ${timestamp} - ${message}"
     echo "[SUCCESS] ${timestamp} - ${message}" >> "${LOG_DIR}/deploy.log"
+}
+
+################################################################################
+# Docker Compose + Env Helpers
+################################################################################
+
+"""
+GOAL: Detect a working Docker Compose command
+
+PARAMETERS:
+  None
+
+RETURNS:
+  int - 0 if Docker Compose is available, 1 otherwise
+
+RAISES:
+  None
+
+GUARANTEES:
+  - On success, DOCKER_COMPOSE_CMD is set to either (docker-compose) or (docker compose)
+"""
+detect_docker_compose() {
+    if command -v docker-compose &> /dev/null; then
+        DOCKER_COMPOSE_CMD=(docker-compose)
+        return 0
+    fi
+
+    if docker compose version &> /dev/null; then
+        DOCKER_COMPOSE_CMD=(docker compose)
+        return 0
+    fi
+
+    return 1
+}
+
+"""
+GOAL: Run docker compose with production compose file and env file
+
+PARAMETERS:
+  args: string[] - Compose arguments - Not empty
+
+RETURNS:
+  int - Exit code from docker compose
+
+RAISES:
+  None
+
+GUARANTEES:
+  - Always uses `.env.production` for interpolation via `--env-file`
+  - Always uses `docker-compose.prod.yml`
+"""
+compose() {
+    if [ ${#DOCKER_COMPOSE_CMD[@]} -eq 0 ]; then
+        if ! detect_docker_compose; then
+            log_error "Docker Compose is not installed (need docker-compose or docker compose)"
+            return 1
+        fi
+    fi
+
+    "${DOCKER_COMPOSE_CMD[@]}" --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"
+}
+
+"""
+GOAL: Read an env var from `.env.production` without exporting it
+
+PARAMETERS:
+  key: string - Variable name - Must be non-empty
+  default: string - Default value if missing/empty - Optional
+
+RETURNS:
+  string - Raw value
+
+RAISES:
+  None
+
+GUARANTEES:
+  - Never fails; returns default on missing file/key
+"""
+get_env_value() {
+    local key="$1"
+    local default_value="${2:-}"
+
+    if [ ! -f "$ENV_FILE" ]; then
+        echo "$default_value"
+        return 0
+    fi
+
+    local value
+    value=$(grep -E "^${key}=" "$ENV_FILE" | tail -n1 | cut -d'=' -f2- | tr -d '\r' || true)
+    if [ -z "$value" ]; then
+        echo "$default_value"
+        return 0
+    fi
+
+    echo "$value"
 }
 
 ################################################################################
@@ -267,8 +365,8 @@ validate_environment() {
     fi
     
     # Check Docker Compose
-    if ! command -v docker-compose &> /dev/null; then
-        log_error "Docker Compose is not installed"
+    if ! detect_docker_compose; then
+        log_error "Docker Compose is not installed (need docker-compose or docker compose)"
         return 1
     fi
     
@@ -289,15 +387,20 @@ validate_environment() {
         return 1
     fi
     
-    # Check environment variables
-    if ! grep -q "DJANGO_SECRET_KEY" "$ENV_FILE"; then
-        log_error "DJANGO_SECRET_KEY not set in environment file"
-        return 1
+    # Check environment variables (minimal DB-related checks)
+    if ! grep -qE "^(SECRET_KEY|DJANGO_SECRET_KEY)=" "$ENV_FILE"; then
+        log_warning "SECRET_KEY not found in environment file (set SECRET_KEY for Django)"
     fi
-    
-    if ! grep -q "DATABASE_URL" "$ENV_FILE"; then
-        log_error "DATABASE_URL not set in environment file"
-        return 1
+
+    local database_url
+    database_url=$(get_env_value "DATABASE_URL" "")
+    if [ -z "$database_url" ]; then
+        local pg_password
+        pg_password=$(get_env_value "POSTGRES_PASSWORD" "")
+        if [ -z "$pg_password" ]; then
+            log_error "Database config missing: set DATABASE_URL or POSTGRES_PASSWORD in $ENV_FILE"
+            return 1
+        fi
     fi
     
     log_success "Environment validation passed"
@@ -325,9 +428,7 @@ validate_environment_variables() {
     log_info "Validating environment variables..."
     
     local required_vars=(
-        "DJANGO_SECRET_KEY"
         "DJANGO_SETTINGS_MODULE"
-        "DATABASE_URL"
         "REDIS_URL"
         "CARGOTECH_API_KEY"
         "TELEGRAM_BOT_TOKEN"
@@ -341,6 +442,20 @@ validate_environment_variables() {
             missing_vars+=("$var")
         fi
     done
+
+    if ! grep -qE "^(SECRET_KEY|DJANGO_SECRET_KEY)=" "$ENV_FILE"; then
+        missing_vars+=("SECRET_KEY (or DJANGO_SECRET_KEY)")
+    fi
+
+    local database_url
+    database_url=$(get_env_value "DATABASE_URL" "")
+    if [ -z "$database_url" ]; then
+        local pg_password
+        pg_password=$(get_env_value "POSTGRES_PASSWORD" "")
+        if [ -z "$pg_password" ]; then
+            missing_vars+=("DATABASE_URL or POSTGRES_PASSWORD")
+        fi
+    fi
     
     if [ ${#missing_vars[@]} -gt 0 ]; then
         log_error "Missing required environment variables: ${missing_vars[*]}"
@@ -436,7 +551,12 @@ create_backup() {
     
     # Backup database
     log_info "Backing up database..."
-    if docker-compose -f "$COMPOSE_FILE" exec -T db pg_dump -U cargo_viewer_user cargo_viewer_prod > "${backup_dir}/database.sql" 2>/dev/null; then
+    local pg_user
+    local pg_db
+    pg_user=$(get_env_value "POSTGRES_USER" "cargo_viewer_user")
+    pg_db=$(get_env_value "POSTGRES_DB" "cargo_viewer_prod")
+
+    if compose exec -T db pg_dump -U "$pg_user" "$pg_db" > "${backup_dir}/database.sql" 2>/dev/null; then
         log_success "Database backup created: ${backup_dir}/database.sql"
     else
         log_error "Database backup failed"
@@ -579,7 +699,7 @@ build_docker_images() {
     
     cd "$PROJECT_DIR"
     
-    if ! docker-compose -f "$COMPOSE_FILE" build --no-cache; then
+    if ! compose build --no-cache; then
         log_error "Docker image build failed"
         return 1
     fi
@@ -614,7 +734,7 @@ run_migrations() {
     
     cd "$PROJECT_DIR"
     
-    if ! docker-compose -f "$COMPOSE_FILE" run --rm web python manage.py migrate --settings=config.settings.production --noinput; then
+    if ! compose run --rm web python manage.py migrate --settings=config.settings.production --noinput; then
         log_error "Database migrations failed"
         return 1
     fi
@@ -647,7 +767,7 @@ collect_static_files() {
     
     cd "$PROJECT_DIR"
     
-    if ! docker-compose -f "$COMPOSE_FILE" run --rm web python manage.py collectstatic --settings=config.settings.production --noinput --clear; then
+    if ! compose run --rm web python manage.py collectstatic --settings=config.settings.production --noinput --clear; then
         log_error "Static files collection failed"
         return 1
     fi
@@ -679,7 +799,7 @@ upload_static_to_cdn() {
     
     cd "$PROJECT_DIR"
     
-    if ! docker-compose -f "$COMPOSE_FILE" run --rm web python manage.py upload_static_to_cdn --settings=config.settings.production; then
+    if ! compose run --rm web python manage.py upload_static_to_cdn --settings=config.settings.production; then
         log_warning "CDN upload failed, continuing deployment"
         return 0
     fi
@@ -712,10 +832,10 @@ start_containers() {
     cd "$PROJECT_DIR"
     
     # Stop existing containers
-    docker-compose -f "$COMPOSE_FILE" down 2>/dev/null || true
+    compose down 2>/dev/null || true
     
     # Start new containers
-    if ! docker-compose -f "$COMPOSE_FILE" up -d; then
+    if ! compose up -d; then
         log_error "Failed to start containers"
         return 1
     fi
@@ -725,7 +845,7 @@ start_containers() {
     sleep 10
     
     # Check container status
-    if ! docker-compose -f "$COMPOSE_FILE" ps | grep -q "Up"; then
+    if ! compose ps | grep -q "Up"; then
         log_error "Containers are not running"
         return 1
     fi
@@ -815,7 +935,7 @@ perform_health_checks() {
     
     # Check database
     log_info "Checking database connectivity..."
-    if docker-compose -f "$COMPOSE_FILE" exec -T web python manage.py dbshell --settings=config.settings.production -c "SELECT 1;" > /dev/null 2>&1; then
+    if compose exec -T web python manage.py dbshell --settings=config.settings.production -c "SELECT 1;" > /dev/null 2>&1; then
         log_success "Database connectivity check passed"
     else
         log_error "Database connectivity check failed"
@@ -824,7 +944,7 @@ perform_health_checks() {
     
     # Check Redis
     log_info "Checking Redis connectivity..."
-    if docker-compose -f "$COMPOSE_FILE" exec -T redis redis-cli ping > /dev/null 2>&1; then
+    if compose exec -T redis redis-cli ping > /dev/null 2>&1; then
         log_success "Redis connectivity check passed"
     else
         log_error "Redis connectivity check failed"
@@ -878,7 +998,12 @@ rollback_deployment() {
     # Restore database
     log_info "Restoring database from backup..."
     if [ -f "${backup_dir}/database.sql" ]; then
-        if docker-compose -f "$COMPOSE_FILE" exec -T db psql -U cargo_viewer_user -d cargo_viewer_prod < "${backup_dir}/database.sql" 2>/dev/null; then
+        local pg_user
+        local pg_db
+        pg_user=$(get_env_value "POSTGRES_USER" "cargo_viewer_user")
+        pg_db=$(get_env_value "POSTGRES_DB" "cargo_viewer_prod")
+
+        if compose exec -T db psql -U "$pg_user" -d "$pg_db" < "${backup_dir}/database.sql" 2>/dev/null; then
             log_success "Database restored successfully"
         else
             log_error "Database restore failed"
@@ -906,7 +1031,7 @@ rollback_deployment() {
     # Restart containers
     log_info "Restarting containers..."
     cd "$PROJECT_DIR"
-    docker-compose -f "$COMPOSE_FILE" restart
+    compose restart
     
     # Wait for application to be healthy
     if wait_for_health 60 10; then

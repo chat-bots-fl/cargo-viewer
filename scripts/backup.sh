@@ -54,6 +54,9 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
+# Docker Compose command (detected at runtime)
+DOCKER_COMPOSE_CMD=()
+
 ################################################################################
 # Logging Functions
 ################################################################################
@@ -152,6 +155,101 @@ log_success() {
     local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
     echo -e "${GREEN}[SUCCESS]${NC} ${timestamp} - ${message}"
     echo "[SUCCESS] ${timestamp} - ${message}" >> "${LOG_DIR}/backup.log"
+}
+
+################################################################################
+# Docker Compose + Env Helpers
+################################################################################
+
+"""
+GOAL: Detect a working Docker Compose command
+
+PARAMETERS:
+  None
+
+RETURNS:
+  int - 0 if Docker Compose is available, 1 otherwise
+
+RAISES:
+  None
+
+GUARANTEES:
+  - On success, DOCKER_COMPOSE_CMD is set to either (docker-compose) or (docker compose)
+"""
+detect_docker_compose() {
+    if command -v docker-compose &> /dev/null; then
+        DOCKER_COMPOSE_CMD=(docker-compose)
+        return 0
+    fi
+
+    if docker compose version &> /dev/null; then
+        DOCKER_COMPOSE_CMD=(docker compose)
+        return 0
+    fi
+
+    return 1
+}
+
+"""
+GOAL: Run docker compose with production compose file and env file
+
+PARAMETERS:
+  args: string[] - Compose arguments - Not empty
+
+RETURNS:
+  int - Exit code from docker compose
+
+RAISES:
+  None
+
+GUARANTEES:
+  - Always uses `.env.production` for interpolation via `--env-file`
+  - Always uses `docker-compose.prod.yml`
+"""
+compose() {
+    if [ ${#DOCKER_COMPOSE_CMD[@]} -eq 0 ]; then
+        if ! detect_docker_compose; then
+            log_error "Docker Compose is not installed (need docker-compose or docker compose)"
+            return 1
+        fi
+    fi
+
+    "${DOCKER_COMPOSE_CMD[@]}" --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"
+}
+
+"""
+GOAL: Read an env var from `.env.production` without exporting it
+
+PARAMETERS:
+  key: string - Variable name - Must be non-empty
+  default: string - Default value if missing/empty - Optional
+
+RETURNS:
+  string - Raw value
+
+RAISES:
+  None
+
+GUARANTEES:
+  - Never fails; returns default on missing file/key
+"""
+get_env_value() {
+    local key="$1"
+    local default_value="${2:-}"
+
+    if [ ! -f "$ENV_FILE" ]; then
+        echo "$default_value"
+        return 0
+    fi
+
+    local value
+    value=$(grep -E "^${key}=" "$ENV_FILE" | tail -n1 | cut -d'=' -f2- | tr -d '\r' || true)
+    if [ -z "$value" ]; then
+        echo "$default_value"
+        return 0
+    fi
+
+    echo "$value"
 }
 
 ################################################################################
@@ -308,8 +406,8 @@ validate_environment() {
     fi
     
     # Check Docker Compose
-    if ! command -v docker-compose &> /dev/null; then
-        log_error "Docker Compose is not installed"
+    if ! detect_docker_compose; then
+        log_error "Docker Compose is not installed (need docker-compose or docker compose)"
         return 1
     fi
     
@@ -443,7 +541,12 @@ backup_database() {
     cd "$PROJECT_DIR"
     
     # Create database backup
-    if ! docker-compose -f "$COMPOSE_FILE" exec -T db pg_dump -U cargo_viewer_user cargo_viewer_prod | gzip > "$backup_file" 2>/dev/null; then
+    local pg_user
+    local pg_db
+    pg_user=$(get_env_value "POSTGRES_USER" "cargo_viewer_user")
+    pg_db=$(get_env_value "POSTGRES_DB" "cargo_viewer_prod")
+
+    if ! compose exec -T db pg_dump -U "$pg_user" "$pg_db" | gzip > "$backup_file" 2>/dev/null; then
         log_error "Database backup failed"
         return 1
     fi

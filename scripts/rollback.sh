@@ -45,6 +45,9 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
+# Docker Compose command (detected at runtime)
+DOCKER_COMPOSE_CMD=()
+
 ################################################################################
 # Logging Functions
 ################################################################################
@@ -143,6 +146,101 @@ log_success() {
     local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
     echo -e "${GREEN}[SUCCESS]${NC} ${timestamp} - ${message}"
     echo "[SUCCESS] ${timestamp} - ${message}" >> "${LOG_DIR}/rollback.log"
+}
+
+################################################################################
+# Docker Compose + Env Helpers
+################################################################################
+
+"""
+GOAL: Detect a working Docker Compose command
+
+PARAMETERS:
+  None
+
+RETURNS:
+  int - 0 if Docker Compose is available, 1 otherwise
+
+RAISES:
+  None
+
+GUARANTEES:
+  - On success, DOCKER_COMPOSE_CMD is set to either (docker-compose) or (docker compose)
+"""
+detect_docker_compose() {
+    if command -v docker-compose &> /dev/null; then
+        DOCKER_COMPOSE_CMD=(docker-compose)
+        return 0
+    fi
+
+    if docker compose version &> /dev/null; then
+        DOCKER_COMPOSE_CMD=(docker compose)
+        return 0
+    fi
+
+    return 1
+}
+
+"""
+GOAL: Run docker compose with production compose file and env file
+
+PARAMETERS:
+  args: string[] - Compose arguments - Not empty
+
+RETURNS:
+  int - Exit code from docker compose
+
+RAISES:
+  None
+
+GUARANTEES:
+  - Always uses `.env.production` for interpolation via `--env-file`
+  - Always uses `docker-compose.prod.yml`
+"""
+compose() {
+    if [ ${#DOCKER_COMPOSE_CMD[@]} -eq 0 ]; then
+        if ! detect_docker_compose; then
+            log_error "Docker Compose is not installed (need docker-compose or docker compose)"
+            return 1
+        fi
+    fi
+
+    "${DOCKER_COMPOSE_CMD[@]}" --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"
+}
+
+"""
+GOAL: Read an env var from `.env.production` without exporting it
+
+PARAMETERS:
+  key: string - Variable name - Must be non-empty
+  default: string - Default value if missing/empty - Optional
+
+RETURNS:
+  string - Raw value
+
+RAISES:
+  None
+
+GUARANTEES:
+  - Never fails; returns default on missing file/key
+"""
+get_env_value() {
+    local key="$1"
+    local default_value="${2:-}"
+
+    if [ ! -f "$ENV_FILE" ]; then
+        echo "$default_value"
+        return 0
+    fi
+
+    local value
+    value=$(grep -E "^${key}=" "$ENV_FILE" | tail -n1 | cut -d'=' -f2- | tr -d '\r' || true)
+    if [ -z "$value" ]; then
+        echo "$default_value"
+        return 0
+    fi
+
+    echo "$value"
 }
 
 ################################################################################
@@ -422,7 +520,7 @@ stop_containers() {
     
     cd "$PROJECT_DIR"
     
-    if ! docker-compose -f "$COMPOSE_FILE" down; then
+    if ! compose down; then
         log_error "Failed to stop containers"
         return 1
     fi
@@ -462,14 +560,19 @@ restore_database() {
     
     # Start database container only
     cd "$PROJECT_DIR"
-    docker-compose -f "$COMPOSE_FILE" up -d db
+    compose up -d db
     
     # Wait for database to be ready
     log_info "Waiting for database to be ready..."
     sleep 10
     
     # Restore database
-    if ! docker-compose -f "$COMPOSE_FILE" exec -T db psql -U cargo_viewer_user -d cargo_viewer_prod < "$backup_file" 2>/dev/null; then
+    local pg_user
+    local pg_db
+    pg_user=$(get_env_value "POSTGRES_USER" "cargo_viewer_user")
+    pg_db=$(get_env_value "POSTGRES_DB" "cargo_viewer_prod")
+
+    if ! compose exec -T db psql -U "$pg_user" -d "$pg_db" < "$backup_file" 2>/dev/null; then
         log_error "Database restore failed"
         return 1
     fi
@@ -596,7 +699,7 @@ start_containers() {
     
     cd "$PROJECT_DIR"
     
-    if ! docker-compose -f "$COMPOSE_FILE" up -d; then
+    if ! compose up -d; then
         log_error "Failed to start containers"
         return 1
     fi
@@ -606,7 +709,7 @@ start_containers() {
     sleep 10
     
     # Check container status
-    if ! docker-compose -f "$COMPOSE_FILE" ps | grep -q "Up"; then
+    if ! compose ps | grep -q "Up"; then
         log_error "Containers are not running"
         return 1
     fi
@@ -691,7 +794,7 @@ perform_health_checks() {
     
     # Check database
     log_info "Checking database connectivity..."
-    if docker-compose -f "$COMPOSE_FILE" exec -T web python manage.py dbshell --settings=config.settings.production -c "SELECT 1;" > /dev/null 2>&1; then
+    if compose exec -T web python manage.py dbshell --settings=config.settings.production -c "SELECT 1;" > /dev/null 2>&1; then
         log_success "Database connectivity check passed"
     else
         log_error "Database connectivity check failed"
@@ -700,7 +803,7 @@ perform_health_checks() {
     
     # Check Redis
     log_info "Checking Redis connectivity..."
-    if docker-compose -f "$COMPOSE_FILE" exec -T redis redis-cli ping > /dev/null 2>&1; then
+    if compose exec -T redis redis-cli ping > /dev/null 2>&1; then
         log_success "Redis connectivity check passed"
     else
         log_error "Redis connectivity check failed"

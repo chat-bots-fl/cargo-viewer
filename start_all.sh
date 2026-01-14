@@ -65,6 +65,96 @@ if [ ! -f ".env" ]; then
     exit 1
 fi
 
+# Dev/staging: ensure local PostgreSQL is running in Docker.
+DJANGO_ENV_VALUE=$(grep -E '^DJANGO_ENV=' .env | head -n1 | cut -d '=' -f2- | tr -d '\r' | tr '[:upper:]' '[:lower:]')
+if [ -z "$DJANGO_ENV_VALUE" ]; then
+    DJANGO_ENV_VALUE="development"
+fi
+
+DEFAULT_POSTGRES_USER="cargo_viewer_dev"
+DEFAULT_POSTGRES_PASSWORD="cargo_viewer_dev"
+DEFAULT_POSTGRES_HOST="127.0.0.1"
+DEFAULT_POSTGRES_PORT="5432"
+DEFAULT_POSTGRES_DB="cargo_viewer_dev"
+if [ "$DJANGO_ENV_VALUE" = "staging" ]; then
+    DEFAULT_POSTGRES_DB="cargo_viewer_test"
+fi
+DEFAULT_DATABASE_URL="postgresql://${DEFAULT_POSTGRES_USER}:${DEFAULT_POSTGRES_PASSWORD}@${DEFAULT_POSTGRES_HOST}:${DEFAULT_POSTGRES_PORT}/${DEFAULT_POSTGRES_DB}"
+
+if [ "$DJANGO_ENV_VALUE" = "development" ] || [ "$DJANGO_ENV_VALUE" = "staging" ]; then
+    DATABASE_URL_VALUE=$(grep -E '^DATABASE_URL=' .env | head -n1 | cut -d '=' -f2- | tr -d '\r')
+
+    if [ -z "$DATABASE_URL_VALUE" ]; then
+        echo -e "${CYAN}[INFO] DATABASE_URL not set; using local Docker PostgreSQL (${DEFAULT_POSTGRES_DB})${NC}"
+        if grep -q '^DATABASE_URL=' .env; then
+            sed -i.bak "s|^DATABASE_URL=.*|DATABASE_URL=${DEFAULT_DATABASE_URL}|" .env
+        else
+            echo "DATABASE_URL=${DEFAULT_DATABASE_URL}" >> .env
+        fi
+        rm -f .env.bak
+        DATABASE_URL_VALUE="$DEFAULT_DATABASE_URL"
+    fi
+
+    if [[ "$DATABASE_URL_VALUE" == postgres://* || "$DATABASE_URL_VALUE" == postgresql://* ]]; then
+        if [[ "$DATABASE_URL_VALUE" == *"@localhost"* || "$DATABASE_URL_VALUE" == *"@127.0.0.1"* ]]; then
+            ENV_LABEL="DEV"
+            if [ "$DJANGO_ENV_VALUE" = "staging" ]; then
+                ENV_LABEL="TEST"
+            fi
+            echo -e "${CYAN}[INFO] [${ENV_LABEL}] Starting PostgreSQL in Docker...${NC}"
+
+            DOCKER_COMPOSE_CMD=()
+            if command -v docker-compose &> /dev/null; then
+                DOCKER_COMPOSE_CMD=(docker-compose)
+            elif docker compose version &> /dev/null; then
+                DOCKER_COMPOSE_CMD=(docker compose)
+            fi
+
+            if [ ${#DOCKER_COMPOSE_CMD[@]} -eq 0 ]; then
+                echo -e "${RED}[ERROR] Docker Compose not found (need docker-compose or docker compose).${NC}"
+                exit 1
+            fi
+
+            if ! docker info > /dev/null 2>&1; then
+                echo -e "${RED}[ERROR] Docker is not running (docker info failed).${NC}"
+                exit 1
+            fi
+
+            "${DOCKER_COMPOSE_CMD[@]}" up -d db
+
+            echo -e "${CYAN}[INFO] Waiting for PostgreSQL to be ready...${NC}"
+            DB_READY=0
+            for i in {1..30}; do
+                if "${DOCKER_COMPOSE_CMD[@]}" exec -T db sh -c 'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"' > /dev/null 2>&1; then
+                    DB_READY=1
+                    break
+                fi
+                sleep 1
+            done
+
+            if [ $DB_READY -ne 1 ]; then
+                echo -e "${RED}[ERROR] PostgreSQL did not become ready in time.${NC}"
+                echo -e "${YELLOW}[INFO] Check logs: ${CYAN}${DOCKER_COMPOSE_CMD[*]} logs db${NC}"
+                exit 1
+            fi
+
+            DB_NAME_FROM_URL="${DATABASE_URL_VALUE##*/}"
+            DB_NAME_FROM_URL="${DB_NAME_FROM_URL%%\?*}"
+            DB_NAME_FROM_URL="${DB_NAME_FROM_URL%%#*}"
+
+            if [ -n "$DB_NAME_FROM_URL" ] && [[ "$DB_NAME_FROM_URL" =~ ^[a-zA-Z0-9_]+$ ]]; then
+                if ! "${DOCKER_COMPOSE_CMD[@]}" exec -T db sh -c "psql -U \"\$POSTGRES_USER\" -d postgres -tAc \"SELECT 1 FROM pg_database WHERE datname='${DB_NAME_FROM_URL}'\" | grep -q 1" > /dev/null 2>&1; then
+                    echo -e "${CYAN}[INFO] Creating database: ${DB_NAME_FROM_URL}${NC}"
+                    if ! "${DOCKER_COMPOSE_CMD[@]}" exec -T db sh -c "createdb -U \"\$POSTGRES_USER\" \"${DB_NAME_FROM_URL}\"" > /dev/null 2>&1; then
+                        echo -e "${RED}[ERROR] Failed to create database: ${DB_NAME_FROM_URL}${NC}"
+                        exit 1
+                    fi
+                fi
+            fi
+        fi
+    fi
+fi
+
 # Проверяем наличие venv
 if [ ! -d "venv" ] || [ ! -f "venv/bin/python" ]; then
     echo -e "${RED}[ERROR] Виртуальное окружение не найдено${NC}"
