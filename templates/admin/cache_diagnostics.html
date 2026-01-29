@@ -1,0 +1,99 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block content %}
+  <div id="content-main">
+    <div class="module aligned">
+      <h2>Фильтры</h2>
+      <form method="get" style="padding: 10px;">
+        <div class="form-row">
+          <label for="id_q">Поиск (username, user_id, telegram_id)</label>
+          <input
+            type="text"
+            id="id_q"
+            name="q"
+            value="{{ query }}"
+            placeholder="например: 12345 или ivan"
+            style="width: min(700px, 100%);"
+          />
+        </div>
+        <div class="form-row">
+          <label for="id_include_revoked" style="display: flex; gap: 8px; align-items: center;">
+            <input
+              type="checkbox"
+              id="id_include_revoked"
+              name="include_revoked"
+              value="1"
+              {% if include_revoked %}checked{% endif %}
+            />
+            Показывать отозванные сессии
+          </label>
+        </div>
+        <div class="submit-row">
+          <input type="submit" value="Применить" class="default" />
+        </div>
+      </form>
+    </div>
+
+    <div class="module">
+      <h2>CargoTech API</h2>
+      <div style="padding: 10px;">
+        <strong>Token в кэше:</strong>
+        {% if cargotech_token_present %}да{% else %}нет{% endif %}
+        {% if cargotech_token_ttl %}<span class="quiet">(TTL: {{ cargotech_token_ttl }}s)</span>{% endif %}
+      </div>
+    </div>
+
+    <div class="module">
+      <h2>Сессии пользователей</h2>
+      <table id="result_list">
+        <thead>
+          <tr>
+            <th scope="col">User</th>
+            <th scope="col">Telegram</th>
+            <th scope="col">Session</th>
+            <th scope="col">Created</th>
+            <th scope="col">Expires</th>
+            <th scope="col">Cache sid</th>
+            <th scope="col">Cargo cache</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in session_rows %}
+            <tr class="{% cycle 'row1' 'row2' %}">
+              <th scope="row">
+                <div><strong>#{{ row.session.user_id }}</strong> {{ row.session.user.username }}</div>
+              </th>
+              <td>
+                <span class="quiet">
+                  {% if row.telegram_user_id %}{{ row.telegram_user_id }}{% endif %}
+                  {% if row.telegram_username %}(@{{ row.telegram_username }}){% endif %}
+                </span>
+              </td>
+              <td>
+                <div class="quiet" style="font-size: 12px;">{{ row.session.session_id }}</div>
+                <a href="{% url cache_diagnostics_session_url_name row.session.session_id %}">Детали</a>
+              </td>
+              <td class="nowrap quiet">{{ row.session.created_at }}</td>
+              <td class="nowrap quiet">{{ row.session.expires_at }}</td>
+              <td class="quiet">
+                {% if row.cached_sid %}
+                  {% if row.sid_matches %}ok{% else %}mismatch{% endif %}
+                  {% if row.cached_ttl %} ({{ row.cached_ttl }}s){% endif %}
+                {% else %}
+                  missing
+                {% endif %}
+              </td>
+              <td class="quiet">{% if row.has_cargo_cache %}есть{% else %}нет{% endif %}</td>
+            </tr>
+          {% empty %}
+            <tr class="row1">
+              <td colspan="7" class="quiet">Сессии не найдены.</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+{% endblock %}
+

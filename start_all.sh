@@ -199,12 +199,18 @@ echo -e "${CYAN}[4/5] Обновление .env с новым URL...${NC}"
 # Удаляем слеш в конце, если есть
 NGROK_URL_NO_SLASH=${NGROK_URL%/}
 NGROK_DOMAIN=${NGROK_URL_NO_SLASH#https://}
+WSL_IP=$(hostname -I 2>/dev/null | awk '{print $1}' | tr -d '\r')
 
 # Обновляем WEBAPP_URL
 sed -i.bak "s|^WEBAPP_URL=.*|WEBAPP_URL=$NGROK_URL_NO_SLASH|" .env
 
 # Обновляем ALLOWED_HOSTS
-sed -i.bak "s|^ALLOWED_HOSTS=.*|ALLOWED_HOSTS=localhost,127.0.0.1,$NGROK_DOMAIN|" .env
+ALLOWED_HOSTS_VALUE="localhost,127.0.0.1"
+if [ -n "$WSL_IP" ]; then
+    ALLOWED_HOSTS_VALUE="${ALLOWED_HOSTS_VALUE},${WSL_IP}"
+fi
+ALLOWED_HOSTS_VALUE="${ALLOWED_HOSTS_VALUE},${NGROK_DOMAIN}"
+sed -i.bak "s|^ALLOWED_HOSTS=.*|ALLOWED_HOSTS=$ALLOWED_HOSTS_VALUE|" .env
 
 # Удаляем бэкап файл
 rm -f .env.bak
@@ -213,12 +219,57 @@ echo -e "${GREEN}[INFO] .env обновлён с URL: $NGROK_URL_NO_SLASH${NC}"
 
 # 4. Запуск Django
 echo -e "${CYAN}[INFO] Запуск Django сервера в фоновом режиме...${NC}"
-python manage.py runserver > django.log 2>&1 &
+python -u manage.py runserver 0.0.0.0:8000 > django.log 2>&1 &
 DJANGO_PID=$!
 
-# Ждём запуска Django
-echo -e "${YELLOW}[INFO] Ожидание запуска Django (3 секунды)...${NC}"
-sleep 3
+# Ждём запуска Django (важно для ngrok, иначе будет ERR_NGROK_8012)
+echo -e "${YELLOW}[INFO] Ожидание готовности Django на http://127.0.0.1:8000 ...${NC}"
+DJANGO_READY=0
+DJANGO_STARTUP_TIMEOUT_SECONDS=${DJANGO_STARTUP_TIMEOUT_SECONDS:-600}
+for ((i=1; i<=DJANGO_STARTUP_TIMEOUT_SECONDS; i++)); do
+    if ! kill -0 "$DJANGO_PID" > /dev/null 2>&1; then
+        echo -e "${RED}[ERROR] Django процесс завершился во время старта (PID: $DJANGO_PID).${NC}"
+        if [ -f "django.log" ]; then
+            echo -e "${YELLOW}--- tail django.log ---${NC}"
+            tail -n 120 django.log || true
+        fi
+        if [[ "$NGROK_CMD" == *"ngrok.exe"* ]]; then
+            taskkill //F //IM ngrok.exe > /dev/null 2>&1 || true
+        else
+            kill "$NGROK_PID" > /dev/null 2>&1 || true
+        fi
+        exit 1
+    fi
+
+    HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:8000/" 2>/dev/null || true)
+    if [ -n "$HTTP_CODE" ] && [ "$HTTP_CODE" != "000" ]; then
+        DJANGO_READY=1
+        break
+    fi
+    if (( i % 15 == 0 )); then
+        echo -e "${YELLOW}[INFO] Django ещё стартует... (${i}s/${DJANGO_STARTUP_TIMEOUT_SECONDS}s)${NC}"
+    fi
+    sleep 1
+done
+
+if [ "$DJANGO_READY" -eq 1 ]; then
+    echo -e "${GREEN}[INFO] Django готов (HTTP ${HTTP_CODE}).${NC}"
+fi
+
+if [ "$DJANGO_READY" -ne 1 ]; then
+    echo -e "${RED}[ERROR] Django не отвечает на http://127.0.0.1:8000 (timeout).${NC}"
+    if [ -f "django.log" ]; then
+        echo -e "${YELLOW}--- tail django.log ---${NC}"
+        tail -n 120 django.log || true
+    fi
+    if [[ "$NGROK_CMD" == *"ngrok.exe"* ]]; then
+        taskkill //F //IM ngrok.exe > /dev/null 2>&1 || true
+    else
+        kill "$NGROK_PID" > /dev/null 2>&1 || true
+    fi
+    kill "$DJANGO_PID" > /dev/null 2>&1 || true
+    exit 1
+fi
 
 # 5. Настройка webhook
 echo -e "${CYAN}[5/5] Настройка webhook для Telegram бота...${NC}"
@@ -231,6 +282,10 @@ echo -e "${GREEN}========================================${NC}"
 echo ""
 echo -e "${CYAN}Информация:${NC}"
 echo -e "  - ngrok URL: $NGROK_URL_NO_SLASH"
+if [ -n "$WSL_IP" ]; then
+    echo -e "  - Local URL (Windows): http://$WSL_IP:8000"
+fi
+echo -e "  - Local URL (WSL): http://127.0.0.1:8000"
 echo -e "  - Webhook настроен на: $NGROK_URL_NO_SLASH/telegram/webhook/"
 echo -e "  - ngrok PID: $NGROK_PID"
 echo -e "  - Django PID: $DJANGO_PID"

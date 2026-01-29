@@ -92,8 +92,8 @@ def _get_endpoint_limit(request: HttpRequest) -> tuple[str, int]:
     if path.startswith("/telegram/response"):
         return ("telegram", getattr(settings, "RATE_LIMIT_TELEGRAM", 20))
     
-    # Admin panel endpoints
-    if path.startswith("/admin-panel/"):
+    # Admin endpoints (Django admin + legacy /admin-panel/ redirects)
+    if path.startswith("/admin/") or path.startswith("/admin-panel/"):
         return ("admin", getattr(settings, "RATE_LIMIT_ADMIN", 100))
     
     # Default API limit

@@ -1,5 +1,6 @@
-{% extends "admin_panel/base.html" %}
-{% block body %}
+{% extends "admin/base_site.html" %}
+
+{% block content %}
   <section class="card">
     <div class="card-title">Настройки</div>
     {% if error %}<div class="muted">Ошибка: {{ error }}</div>{% endif %}

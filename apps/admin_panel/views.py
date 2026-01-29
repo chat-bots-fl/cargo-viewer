@@ -3,9 +3,10 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from typing import Any
 
+from django.contrib import admin
 from django.db.models import Q
 from django.core.cache import cache
-from django.http import HttpRequest, HttpResponse
+from django.http import Http404, HttpRequest, HttpResponse
 from django.shortcuts import redirect, render
 from django.utils import timezone
 
@@ -159,7 +160,15 @@ def payment_list_view(request: HttpRequest) -> HttpResponse:
         qs = qs.filter(Q(user__username__icontains=search) | Q(yukassa_payment_id__icontains=search))
 
     payments = qs[:200]
-    return render(request, "admin_panel/payments.html", {"payments": payments, "status": status, "search": search})
+    context = {"payments": payments, "status": status, "search": search}
+
+    use_django_admin_urls = str(request.path or "").startswith("/admin/")
+    template_name = "admin_panel/payments.html"
+    if use_django_admin_urls:
+        template_name = "admin/cargo_viewer/payments.html"
+        context = {**admin.site.each_context(request), **context, "title": "Платежи"}
+
+    return render(request, template_name, context)
 
 
 """
@@ -218,7 +227,15 @@ def subscription_list_view(request: HttpRequest) -> HttpResponse:
     if show == "expired":
         qs = qs.filter(is_active=True, expires_at__lt=timezone.now())
     subs = qs[:200]
-    return render(request, "admin_panel/subscriptions.html", {"subscriptions": subs, "show": show})
+    context = {"subscriptions": subs, "show": show}
+
+    use_django_admin_urls = str(request.path or "").startswith("/admin/")
+    template_name = "admin_panel/subscriptions.html"
+    if use_django_admin_urls:
+        template_name = "admin/cargo_viewer/subscriptions.html"
+        context = {**admin.site.each_context(request), **context, "title": "Подписки"}
+
+    return render(request, template_name, context)
 
 
 """
@@ -263,6 +280,8 @@ def promocode_list_view(request: HttpRequest) -> HttpResponse:
     """
     Create promo code on POST; list promo codes on GET.
     """
+    use_django_admin_urls = str(request.path or "").startswith("/admin/")
+
     error: str | None = None
     if request.method == "POST":
         action = str(request.POST.get("action") or "").strip()
@@ -282,22 +301,28 @@ def promocode_list_view(request: HttpRequest) -> HttpResponse:
                 code=code,
                 created_by=request.user,
             )
+            if use_django_admin_urls:
+                return redirect("admin_cargo_viewer_promocodes")
             return redirect("admin_panel_promocodes")
         except Exception as exc:
             error = str(exc)
 
     promos = PromoCode.objects.select_related("created_by").all().order_by("-created_at")[:200]
-    return render(
-        request,
-        "admin_panel/promocodes.html",
-        {
-            "promocodes": promos,
-            "actions": list(PromoCodeService.ACTION_TO_DAYS.keys()),
-            "error": error,
-            "now": timezone.now(),
-            "now_plus_30": timezone.now() + timedelta(days=30),
-        },
-    )
+
+    context = {
+        "promocodes": promos,
+        "actions": list(PromoCodeService.ACTION_TO_DAYS.keys()),
+        "error": error,
+        "now": timezone.now(),
+        "now_plus_30": timezone.now() + timedelta(days=30),
+    }
+
+    template_name = "admin_panel/promocodes.html"
+    if use_django_admin_urls:
+        template_name = "admin/cargo_viewer/promocodes.html"
+        context = {**admin.site.each_context(request), **context, "title": "Промокоды"}
+
+    return render(request, template_name, context)
 
 
 """
@@ -342,6 +367,8 @@ def settings_view(request: HttpRequest) -> HttpResponse:
     """
     Simple settings UI: toggle payments_enabled flag and edit tariffs JSON.
     """
+    use_django_admin_urls = str(request.path or "").startswith("/admin/")
+
     error: str | None = None
     if request.method == "POST":
         try:
@@ -352,6 +379,8 @@ def settings_view(request: HttpRequest) -> HttpResponse:
             ff.enabled = payments_enabled
             ff.save(update_fields=["enabled", "updated_at"])
 
+            if use_django_admin_urls:
+                return redirect("admin_cargo_viewer_settings")
             return redirect("admin_panel_settings")
         except Exception as exc:
             error = str(exc)
@@ -359,11 +388,15 @@ def settings_view(request: HttpRequest) -> HttpResponse:
     payments_enabled_val = bool(SystemSetting.get_setting("payments_enabled", True))
     tariffs = SystemSetting.get_setting("tariffs", PaymentService.DEFAULT_TARIFFS)
     flags = FeatureFlag.objects.all().order_by("key")
-    return render(
-        request,
-        "admin_panel/settings.html",
-        {"payments_enabled": payments_enabled_val, "tariffs": tariffs, "flags": flags, "error": error},
-    )
+
+    context = {"payments_enabled": payments_enabled_val, "tariffs": tariffs, "flags": flags, "error": error}
+
+    template_name = "admin_panel/settings.html"
+    if use_django_admin_urls:
+        template_name = "admin/cargo_viewer/settings.html"
+        context = {**admin.site.each_context(request), **context, "title": "Настройки"}
+
+    return render(request, template_name, context)
 
 
 """
@@ -408,7 +441,15 @@ def audit_log_view(request: HttpRequest) -> HttpResponse:
     Render recent audit log entries.
     """
     logs = AuditLog.objects.select_related("user").all().order_by("-created_at")[:300]
-    return render(request, "admin_panel/audit_log.html", {"logs": logs})
+    context = {"logs": logs}
+
+    use_django_admin_urls = str(request.path or "").startswith("/admin/")
+    template_name = "admin_panel/audit_log.html"
+    if use_django_admin_urls:
+        template_name = "admin/cargo_viewer/audit_log.html"
+        context = {**admin.site.each_context(request), **context, "title": "Журнал аудита"}
+
+    return render(request, template_name, context)
 
 
 """
@@ -488,23 +529,26 @@ def cache_diagnostics_view(request: HttpRequest) -> HttpResponse:
     cargotech_token = cache.get(CargoTechAuthService.CACHE_KEY)
     cargotech_token_ttl = get_cache_ttl_seconds(CargoTechAuthService.CACHE_KEY)
 
-    return render(
-        request,
-        "admin_panel/cache_diagnostics.html",
-        {
-            "query": query,
-            "include_revoked": include_revoked,
-            "session_rows": session_rows,
-            "cargotech_token_present": bool(cargotech_token),
-            "cargotech_token_ttl": cargotech_token_ttl,
-            "cache_diagnostics_url_name": "admin_cache_diagnostics"
-            if use_django_admin_urls
-            else "admin_panel_cache_diagnostics",
-            "cache_diagnostics_session_url_name": "admin_cache_diagnostics_session"
-            if use_django_admin_urls
-            else "admin_panel_cache_diagnostics_session",
-        },
-    )
+    context = {
+        "query": query,
+        "include_revoked": include_revoked,
+        "session_rows": session_rows,
+        "cargotech_token_present": bool(cargotech_token),
+        "cargotech_token_ttl": cargotech_token_ttl,
+        "cache_diagnostics_url_name": "admin_cache_diagnostics"
+        if use_django_admin_urls
+        else "admin_panel_cache_diagnostics",
+        "cache_diagnostics_session_url_name": "admin_cache_diagnostics_session"
+        if use_django_admin_urls
+        else "admin_panel_cache_diagnostics_session",
+    }
+
+    template_name = "admin_panel/cache_diagnostics.html"
+    if use_django_admin_urls:
+        template_name = "admin/cache_diagnostics.html"
+        context = {**admin.site.each_context(request), **context, "title": "Сессии пользователей"}
+
+    return render(request, template_name, context)
 
 
 """
@@ -582,23 +626,53 @@ def cache_diagnostics_session_view(request: HttpRequest, session_id: str) -> Htt
     if selected_key and (selected_key == driver_cache_key or selected_key in cargo_list_keys):
         selected_value = format_cache_value(cache.get(selected_key))
 
-    return render(
-        request,
-        "admin_panel/cache_diagnostics_session.html",
-        {
-            "session": session,
-            "telegram_user_id": telegram_user_id,
-            "telegram_username": telegram_username,
-            "message": message,
-            "driver_cache_key": driver_cache_key,
-            "cached_sid": cached_sid,
-            "cached_ttl": cached_ttl,
-            "sid_matches": sid_matches,
-            "cargo_list_key_rows": cargo_list_key_rows,
-            "selected_key": selected_key,
-            "selected_value": selected_value,
-            "cache_diagnostics_url_name": "admin_cache_diagnostics"
-            if use_django_admin_urls
-            else "admin_panel_cache_diagnostics",
-        },
-    )
+    context = {
+        "session": session,
+        "telegram_user_id": telegram_user_id,
+        "telegram_username": telegram_username,
+        "message": message,
+        "driver_cache_key": driver_cache_key,
+        "cached_sid": cached_sid,
+        "cached_ttl": cached_ttl,
+        "sid_matches": sid_matches,
+        "cargo_list_key_rows": cargo_list_key_rows,
+        "selected_key": selected_key,
+        "selected_value": selected_value,
+        "cache_diagnostics_url_name": "admin_cache_diagnostics"
+        if use_django_admin_urls
+        else "admin_panel_cache_diagnostics",
+    }
+
+    template_name = "admin_panel/cache_diagnostics_session.html"
+    if use_django_admin_urls:
+        template_name = "admin/cache_diagnostics_session.html"
+        context = {
+            **admin.site.each_context(request),
+            **context,
+            "title": "Сессия пользователя",
+            "subtitle": f"#{session.user_id} • {session.session_id}",
+        }
+
+    return render(request, template_name, context)
+
+
+"""
+GOAL: Disable Django admin app-index page for the auth app.
+
+PARAMETERS:
+  request: HttpRequest - Admin request - Not None
+
+RETURNS:
+  HttpResponse - Never returned (always raises)
+
+RAISES:
+  Http404: Always, to disable /admin/auth/
+
+GUARANTEES:
+  - The /admin/auth/ URL never renders an app-index page
+"""
+def disabled_auth_app_index(request: HttpRequest) -> HttpResponse:
+    """
+    Raise Http404 so the auth app-index URL cannot be used.
+    """
+    raise Http404()

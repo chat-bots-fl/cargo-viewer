@@ -1,0 +1,40 @@
+{% extends "admin/base_site.html" %}
+
+{% block content %}
+  <section class="card">
+    <div class="card-title">Cargo Viewer</div>
+    <div class="admin-kpi-grid">
+      <a class="card admin-card-link" href="{% url 'admin_cargo_viewer_payments' %}">
+        <div style="font-weight:800;margin-bottom:6px;">Платежи</div>
+        <div class="muted">Поиск и просмотр платежей</div>
+      </a>
+      <a class="card admin-card-link" href="{% url 'admin_cargo_viewer_subscriptions' %}">
+        <div style="font-weight:800;margin-bottom:6px;">Подписки</div>
+        <div class="muted">Активные и истёкшие подписки</div>
+      </a>
+      <a class="card admin-card-link" href="{% url 'admin_cargo_viewer_promocodes' %}">
+        <div style="font-weight:800;margin-bottom:6px;">Промокоды</div>
+        <div class="muted">Создание и список промокодов</div>
+      </a>
+      <a class="card admin-card-link" href="{% url 'admin_cache_diagnostics' %}">
+        <div style="font-weight:800;margin-bottom:6px;">Диагностика кэша</div>
+        <div class="muted">Проверка токенов/сессий/кэшей</div>
+      </a>
+      <a class="card admin-card-link" href="{% url 'admin_cargo_viewer_settings' %}">
+        <div style="font-weight:800;margin-bottom:6px;">Настройки</div>
+        <div class="muted">Системные настройки и feature flags</div>
+      </a>
+      <a class="card admin-card-link" href="{% url 'admin_cargo_viewer_audit_log' %}">
+        <div style="font-weight:800;margin-bottom:6px;">Журнал аудита</div>
+        <div class="muted">Журнал действий в системе</div>
+      </a>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="card-title">Администрирование</div>
+    <div class="muted">Управление моделями Django admin</div>
+  </section>
+
+  {% include "admin/app_list_without_auth.html" with app_list=app_list show_changelinks=True %}
+{% endblock %}

@@ -1,0 +1,73 @@
+{% load i18n %}
+<button class="sticky toggle-nav-sidebar" id="toggle-nav-sidebar" aria-label="{% translate 'Toggle navigation' %}"></button>
+<nav class="admin-sidebar sticky" id="nav-sidebar" aria-label="{% translate 'Sidebar' %}">
+  {% with url_name=request.resolver_match.url_name|default:'' %}
+    <div class="admin-brand">Cargo Viewer</div>
+
+    <div class="admin-nav-section" aria-label="Cargo Viewer">
+      <div class="admin-nav-section-title">Cargo Viewer</div>
+
+      <div class="admin-nav">
+        <a class="admin-nav-link {% if url_name == 'index' %}is-active{% endif %}" href="{% url 'admin:index' %}">
+          <span class="admin-nav-icon" aria-hidden="true"></span>
+          Начало
+        </a>
+        <a class="admin-nav-link {% if url_name == 'admin_cargo_viewer_payments' %}is-active{% endif %}" href="{% url 'admin_cargo_viewer_payments' %}">
+          <span class="admin-nav-icon" aria-hidden="true"></span>
+          Платежи
+        </a>
+        <a class="admin-nav-link {% if url_name == 'admin_cargo_viewer_subscriptions' %}is-active{% endif %}" href="{% url 'admin_cargo_viewer_subscriptions' %}">
+          <span class="admin-nav-icon" aria-hidden="true"></span>
+          Подписки
+        </a>
+        <a class="admin-nav-link {% if url_name == 'admin_cargo_viewer_promocodes' %}is-active{% endif %}" href="{% url 'admin_cargo_viewer_promocodes' %}">
+          <span class="admin-nav-icon" aria-hidden="true"></span>
+          Промокоды
+        </a>
+        <a class="admin-nav-link {% if url_name == 'admin_cargo_viewer_settings' %}is-active{% endif %}" href="{% url 'admin_cargo_viewer_settings' %}">
+          <span class="admin-nav-icon" aria-hidden="true"></span>
+          Настройки
+        </a>
+        <a class="admin-nav-link {% if url_name == 'admin_cargo_viewer_audit_log' %}is-active{% endif %}" href="{% url 'admin_cargo_viewer_audit_log' %}">
+          <span class="admin-nav-icon" aria-hidden="true"></span>
+          Журнал аудита
+        </a>
+        <a class="admin-nav-link {% if url_name == 'admin_cache_diagnostics' or url_name == 'admin_cache_diagnostics_session' %}is-active{% endif %}" href="{% url 'admin_cache_diagnostics' %}">
+          <span class="admin-nav-icon" aria-hidden="true"></span>
+          Диагностика кэша
+        </a>
+      </div>
+    </div>
+
+    <div class="admin-nav-section" aria-label="Администрирование">
+      <div class="admin-nav-section-title">Администрирование</div>
+
+      <div class="admin-nav" aria-label="Users and groups">
+        <a class="admin-nav-link {% if 'auth_user' in url_name %}is-active{% endif %}" href="{% url 'admin:auth_user_changelist' %}">
+          <span class="admin-nav-icon" aria-hidden="true"></span>
+          Пользователи
+        </a>
+        <a class="admin-nav-link {% if 'auth_group' in url_name %}is-active{% endif %}" href="{% url 'admin:auth_group_changelist' %}">
+          <span class="admin-nav-icon" aria-hidden="true"></span>
+          Группы
+        </a>
+      </div>
+
+      <input
+        type="search"
+        id="nav-filter"
+        placeholder="{% translate 'Start typing to filter…' %}"
+        aria-label="{% translate 'Filter navigation items' %}"
+      >
+
+      {% include 'admin/app_list_without_auth.html' with app_list=available_apps show_changelinks=False %}
+    </div>
+
+    {% if user.is_active and user.is_staff %}
+      <div class="admin-sidebar-footer">
+        <div class="muted" style="font-size:12px;">Signed in</div>
+        <div style="font-weight:700;">{% firstof user.get_short_name user.get_username %}</div>
+      </div>
+    {% endif %}
+  {% endwith %}
+</nav>

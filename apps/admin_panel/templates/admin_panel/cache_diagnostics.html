@@ -3,7 +3,7 @@
   <section class="card">
     <div class="card-title">Диагностика кэша</div>
     <div class="muted" style="margin-bottom:10px;">
-      Режим предназначен для проверки корректности кэширования данных, загружаемых с сайта-источника.
+      Режим предназначен для проверки корректности кеширования данных, загружаемых с сайта-источника.
     </div>
     <form method="get" class="filters">
       <div class="row" style="margin-bottom:10px;">
@@ -21,7 +21,7 @@
   <section class="card">
     <div class="card-title">CargoTech API</div>
     <div>
-      <strong>Token в кэше:</strong>
+      <strong>Token в кеше:</strong>
       {% if cargotech_token_present %}да{% else %}нет{% endif %}
       {% if cargotech_token_ttl %}<span class="muted">(TTL: {{ cargotech_token_ttl }}s)</span>{% endif %}
     </div>
@@ -29,16 +29,16 @@
 
   <section class="card">
     <div class="card-title">Сессии пользователей</div>
-    <table style="width:100%;border-collapse:collapse;">
+    <table class="admin-table">
       <thead>
         <tr>
-          <th style="text-align:left;">User</th>
-          <th style="text-align:left;">Telegram</th>
-          <th style="text-align:left;">Session</th>
-          <th style="text-align:left;">Created</th>
-          <th style="text-align:left;">Expires</th>
-          <th style="text-align:left;">Cache sid</th>
-          <th style="text-align:left;">Cargo cache</th>
+          <th>User</th>
+          <th>Telegram</th>
+          <th>Session</th>
+          <th>Created</th>
+          <th>Expires</th>
+          <th>Cache sid</th>
+          <th>Cargo cache</th>
         </tr>
       </thead>
       <tbody>
@@ -78,3 +78,4 @@
     </table>
   </section>
 {% endblock %}
+

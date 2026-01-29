@@ -1,0 +1,234 @@
+/* Django Admin overrides to match the custom /admin-panel/ UI
+   (light theme + left sidebar layout, Issue #1). */
+
+body.admin-body #container {
+  background: transparent;
+}
+
+body.admin-body #header {
+  background: var(--card);
+  border-bottom: 1px solid var(--border);
+}
+
+body.admin-body #header,
+body.admin-body nav[aria-label="Breadcrumbs"] {
+  max-width: none;
+  margin-left: 16px;
+  margin-right: 16px;
+}
+
+body.admin-body #header {
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  margin-top: 16px;
+}
+
+body.admin-body #header #branding #site-name a {
+  color: var(--text);
+  font-weight: 900;
+  letter-spacing: -0.01em;
+  text-decoration: none;
+}
+
+body.admin-body #header #user-tools,
+body.admin-body #header #user-tools a,
+body.admin-body #header #user-tools button {
+  color: var(--muted);
+}
+
+body.admin-body #header #user-tools a:hover {
+  color: var(--text);
+}
+
+body.admin-body nav[aria-label="Breadcrumbs"] .breadcrumbs {
+  background: transparent;
+  padding: 10px 0 0;
+}
+
+body.admin-body nav[aria-label="Breadcrumbs"] .breadcrumbs a {
+  color: var(--accent-2);
+}
+
+body.admin-body .main#main {
+  max-width: none;
+  margin-left: 16px;
+  margin-right: 16px;
+  padding: 16px 0 24px;
+  gap: 16px;
+  flex-direction: row;
+}
+
+body.admin-body #nav-sidebar {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 12px;
+  width: 280px;
+}
+
+body.admin-body #nav-sidebar #nav-filter {
+  width: 100%;
+  margin: 10px 0 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: #ffffff;
+  color: var(--text);
+}
+
+body.admin-body #nav-sidebar a {
+  color: var(--text);
+}
+
+body.admin-body #nav-sidebar a:hover {
+  color: var(--text);
+  text-decoration: none;
+}
+
+body.admin-body #nav-sidebar .module {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  margin: 12px 0 0;
+}
+
+body.admin-body #nav-sidebar .module table {
+  width: 100%;
+}
+
+body.admin-body #nav-sidebar .module caption {
+  background: transparent;
+  border: 0;
+  border-top: 1px solid var(--border);
+  padding: 12px 8px 8px;
+  margin: 12px 0 6px;
+}
+
+body.admin-body .content {
+  background: transparent;
+  padding: 0;
+}
+
+body.admin-body #content {
+  background: transparent;
+  border: 0;
+  padding: 0;
+}
+
+body.admin-body #content > h1 {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 12px 14px;
+  margin: 0 0 12px;
+  font-size: 16px;
+  font-weight: 900;
+  letter-spacing: -0.01em;
+}
+
+body.admin-body .module,
+body.admin-body .inline-group,
+body.admin-body fieldset.module {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 12px;
+}
+
+body.admin-body .module h2,
+body.admin-body .module caption,
+body.admin-body .inline-group h2 {
+  background: transparent;
+  border: 0;
+  color: var(--text);
+  font-weight: 900;
+}
+
+body.admin-body .form-row {
+  border-bottom-color: var(--border);
+}
+
+body.admin-body input[type="text"],
+body.admin-body input[type="password"],
+body.admin-body input[type="email"],
+body.admin-body input[type="number"],
+body.admin-body input[type="url"],
+body.admin-body textarea,
+body.admin-body select {
+  background: #ffffff;
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 12px;
+}
+
+body.admin-body input[type="text"]:focus,
+body.admin-body input[type="password"]:focus,
+body.admin-body input[type="email"]:focus,
+body.admin-body input[type="number"]:focus,
+body.admin-body input[type="url"]:focus,
+body.admin-body textarea:focus,
+body.admin-body select:focus {
+  border-color: rgba(37, 99, 235, 0.6);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+  outline: none;
+}
+
+body.admin-body .button,
+body.admin-body input[type="submit"],
+body.admin-body input[type="button"],
+body.admin-body .submit-row input.default {
+  background: var(--accent);
+  border: 0;
+  border-radius: 12px;
+  color: #ffffff;
+  font-weight: 800;
+  padding: 10px 12px;
+}
+
+body.admin-body .submit-row {
+  background: transparent;
+  border: 0;
+}
+
+body.admin-body .deletelink,
+body.admin-body a.deletelink {
+  color: #ffffff !important;
+  background: var(--danger);
+  border-radius: 12px;
+  padding: 10px 12px;
+  border: 0;
+}
+
+body.admin-body #result_list {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+body.admin-body #result_list th,
+body.admin-body #result_list td {
+  border-bottom: 1px solid var(--border);
+  padding: 10px 10px;
+}
+
+body.admin-body #result_list thead th {
+  color: var(--muted);
+  font-weight: 900;
+  font-size: 12px;
+}
+
+body.admin-body #result_list tbody tr:hover td,
+body.admin-body #result_list tbody tr:hover th {
+  background: rgba(17, 24, 39, 0.03);
+}
+
+@media (max-width: 920px) {
+  body.admin-body .main#main {
+    flex-direction: column;
+    padding: 12px 0 24px;
+  }
+
+  body.admin-body #nav-sidebar {
+    width: auto;
+    position: static;
+  }
+}

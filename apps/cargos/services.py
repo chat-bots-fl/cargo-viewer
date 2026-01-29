@@ -3,10 +3,13 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
+import threading
 from decimal import Decimal, ROUND_HALF_UP
 from datetime import datetime
 from typing import Any, Mapping, Optional, List
 
+from django.conf import settings
 from django.core.cache import cache
 
 from apps.cargos.serializers import safe_get
@@ -189,6 +192,7 @@ def _normalize_phone_for_tel(phone: str | None) -> str:
 class CargoService:
     CACHE_TIMEOUT_LIST = 300  # 5 minutes
     CACHE_TIMEOUT_DETAIL = 900  # 15 minutes
+    PREFETCH_LOCK_TTL_SECONDS = 60
     CACHE_KEY_VERSION_LIST = "v2"
     CACHE_KEY_VERSION_DETAIL = "v3"
 
@@ -315,6 +319,84 @@ class CargoService:
             if cached:
                 return cached
             raise
+
+    """
+    GOAL: Prefetch a cargo list page into cache without blocking the current request.
+
+    PARAMETERS:
+      user_id: int - Django user id - Must be > 0
+      api_params: dict[str, Any] - CargoTech query params for the page to prefetch - Must be JSON-serializable
+
+    RETURNS:
+      bool - True if a prefetch job was started, False otherwise
+
+    RAISES:
+      ValueError: If user_id <= 0
+
+    GUARANTEES:
+      - Never blocks the caller on external API calls
+      - Uses a short-lived cache lock to avoid duplicate prefetches
+      - Respects CARGO_PREFETCH_ENABLED env var (defaults to settings.DEBUG when unset)
+    """
+    @classmethod
+    def prefetch_cargos(cls, *, user_id: int, api_params: dict[str, Any]) -> bool:
+        """
+        Acquire a lightweight lock in cache, then run get_cargos() in a daemon thread to warm Redis.
+        """
+        if user_id <= 0:
+            raise ValueError("user_id must be > 0")
+
+        env_value = os.getenv("CARGO_PREFETCH_ENABLED")
+        if env_value is None:
+            enabled = bool(getattr(settings, "DEBUG", False))
+        else:
+            enabled = str(env_value).strip().lower() in {"1", "true", "yes", "on"}
+
+        if not enabled:
+            return False
+
+        filter_hash = _stable_hash(api_params)
+        cache_key = f"user:{user_id}:cargos:{cls.CACHE_KEY_VERSION_LIST}:{filter_hash}"
+
+        ttl_fn = getattr(cache, "ttl", None)
+        if callable(ttl_fn):
+            try:
+                ttl_value = ttl_fn(cache_key)
+                # django-redis returns 0 for missing keys; treat only positive TTL as "exists".
+                if ttl_value is not None and int(ttl_value) > 0:
+                    return False
+            except Exception:
+                pass
+
+        lock_key = f"{cache_key}:prefetch_lock"
+        try:
+            lock_acquired = bool(cache.add(lock_key, 1, timeout=cls.PREFETCH_LOCK_TTL_SECONDS))
+        except Exception:
+            lock_acquired = True
+
+        if not lock_acquired:
+            return False
+
+        safe_api_params = dict(api_params)
+
+        def _run() -> None:
+            try:
+                cls.get_cargos(user_id=user_id, api_params=safe_api_params)
+            except Exception as exc:
+                logger.info("Cargo list prefetch failed: user_id=%s err=%s", user_id, exc)
+            finally:
+                try:
+                    cache.delete(lock_key)
+                except Exception:
+                    pass
+
+        threading.Thread(
+            target=_run,
+            name=f"cargo-prefetch-user-{user_id}",
+            daemon=True,
+        ).start()
+
+        return True
 
     """
     GOAL: Get cargo detail with caching (detail endpoint includes comment field).

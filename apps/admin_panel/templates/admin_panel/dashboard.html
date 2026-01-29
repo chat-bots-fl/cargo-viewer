@@ -1,14 +1,25 @@
 {% extends "admin_panel/base.html" %}
 {% block body %}
   <section class="card">
-    <div class="card-title">Навигация</div>
-    <ul>
-      <li><a class="link" href="{% url 'admin_panel_payments' %}">Платежи</a></li>
-      <li><a class="link" href="{% url 'admin_panel_subscriptions' %}">Подписки</a></li>
-      <li><a class="link" href="{% url 'admin_panel_promocodes' %}">Промокоды</a></li>
-      <li><a class="link" href="{% url 'admin_panel_settings' %}">Настройки</a></li>
-      <li><a class="link" href="{% url 'admin_panel_audit_log' %}">Audit log</a></li>
-      <li><a class="link" href="{% url 'admin_panel_cache_diagnostics' %}">Диагностика кэша</a></li>
-    </ul>
+    <div class="card-title">Быстрые ссылки</div>
+    <div class="muted" style="margin-bottom:10px;">Навигация дублируется в меню справа.</div>
+    <div class="admin-kpi-grid">
+      <a class="card admin-card-link" href="{% url 'admin_panel_payments' %}">
+        <div style="font-weight:800;margin-bottom:6px;">Payments</div>
+        <div class="muted">Поиск и просмотр платежей</div>
+      </a>
+      <a class="card admin-card-link" href="{% url 'admin_panel_subscriptions' %}">
+        <div style="font-weight:800;margin-bottom:6px;">Subscriptions</div>
+        <div class="muted">Активные и истёкшие подписки</div>
+      </a>
+      <a class="card admin-card-link" href="{% url 'admin_panel_promocodes' %}">
+        <div style="font-weight:800;margin-bottom:6px;">Promo codes</div>
+        <div class="muted">Создание и список промокодов</div>
+      </a>
+      <a class="card admin-card-link" href="{% url 'admin_panel_cache_diagnostics' %}">
+        <div style="font-weight:800;margin-bottom:6px;">Cache diagnostics</div>
+        <div class="muted">Проверка токенов/сессий/кэшей</div>
+      </a>
+    </div>
   </section>
 {% endblock %}

@@ -1,4 +1,4 @@
-<div class="cargo-card" data-cargo-open="{{ cargo.cargo_id|default:cargo.id }}">
+<div id="cargo-card-{{ cargo.cargo_id|default:cargo.id }}" class="cargo-card" data-cargo-open="{{ cargo.cargo_id|default:cargo.id }}">
   <div class="cargo-top">
     <div class="cargo-route">
       <div class="cargo-locations">
@@ -13,21 +13,23 @@
         </div>
       </div>
     </div>
-    <div class="cargo-price">{{ cargo.price_display|default:cargo.price }}</div>
   </div>
 
   <div class="cargo-bottom">
     <div class="cargo-attrs-left">
+      <div class="muted cargo-loading-type-row">
+        <span>
+          {% if cargo.loading_type %}Тип погруз <strong>{{ cargo.loading_type }}</strong>{% endif %}
+        </span>
+        <span id="cargo-price-{{ cargo.cargo_id|default:cargo.id }}" class="cargo-price cargo-price-inline">{{ cargo.price_display|default:cargo.price }}</span>
+      </div>
+    </div>
+    <div class="cargo-attrs-right">
       {% if cargo.truck_type or cargo.wv_display %}
         <div class="muted">
           {% if cargo.truck_type %}Тип кузова <strong>{{ cargo.truck_type }}</strong>{% endif %}
           {% if cargo.wv_display %}{% if cargo.truck_type %} · {% endif %}<strong>{{ cargo.wv_display }}</strong>{% endif %}
         </div>
-      {% endif %}
-    </div>
-    <div class="cargo-attrs-right">
-      {% if cargo.loading_type %}
-        <div class="muted">Тип погруз <strong>{{ cargo.loading_type }}</strong></div>
       {% endif %}
     </div>
   </div>

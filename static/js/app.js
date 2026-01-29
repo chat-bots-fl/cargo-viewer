@@ -5,8 +5,50 @@ const CargoApp = (() => {
   let modalDefaults = null;
   let activeModalRequestId = null;
   let modalRequestSeq = 0;
+  let activeListRequestId = null;
+  let listRequestSeq = 0;
   let loadMoreObserver = null;
   let loadMoreObservedEl = null;
+  let priceRefreshTimer = null;
+  let priceRefreshRequestSeq = 0;
+
+  function setCargoListLoading(message = "Загрузка…") {
+    const cargoList = document.getElementById("cargo-list");
+    if (!cargoList) return;
+
+    const cargoCount = document.getElementById("cargo-count");
+    if (cargoCount) cargoCount.textContent = "";
+
+    cargoList.innerHTML = `
+      <div style="display:flex;align-items:center;gap:10px;">
+        <div class="spinner" aria-label="Loading"></div>
+        <div class="muted">${message}</div>
+      </div>
+    `;
+  }
+
+  function buildCurrentCargosQuery() {
+    const params = {
+      start_point_id: document.getElementById("start_point_id")?.value,
+      start_point_type: document.getElementById("start_point_type")?.value,
+      finish_point_id: document.getElementById("finish_point_id")?.value,
+      finish_point_type: document.getElementById("finish_point_type")?.value,
+      start_date: document.getElementById("start_date")?.value,
+      weight_volume: document.getElementById("weight_volume")?.value,
+      load_types: document.getElementById("load_types")?.value,
+      truck_types: document.getElementById("truck_types")?.value,
+      mode: document.getElementById("mode")?.value,
+    };
+
+    const usp = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (value === undefined || value === null) return;
+      const s = String(value).trim();
+      if (!s) return;
+      usp.set(key, s);
+    });
+    return usp.toString();
+  }
 
   function getToken() {
     // Try localStorage first, fallback to cookie
@@ -221,11 +263,39 @@ const CargoApp = (() => {
 
     document.body.addEventListener("htmx:beforeSwap", (evt) => {
       const target = evt.detail && evt.detail.target ? evt.detail.target : null;
-      if (!target || (target.id !== "modal-body" && target.id !== "modal-header")) return;
+      if (!target) return;
 
-      const root = document.getElementById("modal-root");
-      if (root && root.classList.contains("hidden")) {
-        evt.detail.shouldSwap = false;
+      if (target.id === "modal-body" || target.id === "modal-header") {
+        const root = document.getElementById("modal-root");
+        if (root && root.classList.contains("hidden")) {
+          evt.detail.shouldSwap = false;
+          return;
+        }
+
+        const xhr = evt.detail && evt.detail.xhr ? evt.detail.xhr : null;
+        const responseUrl = xhr && xhr.responseURL ? String(xhr.responseURL) : "";
+        if (!responseUrl) return;
+
+        let rid = null;
+        try {
+          rid = new URL(responseUrl, window.location.origin).searchParams.get("_rid");
+        } catch (e) {
+          rid = null;
+        }
+
+        if (!rid || activeModalRequestId === null) return;
+        if (String(activeModalRequestId) !== String(rid)) {
+          evt.detail.shouldSwap = false;
+        }
+        return;
+      }
+
+      if (
+        target.id !== "cargo-list" &&
+        target.id !== "cargo-cards" &&
+        target.id !== "cargo-count" &&
+        target.id !== "load-more"
+      ) {
         return;
       }
 
@@ -240,8 +310,8 @@ const CargoApp = (() => {
         rid = null;
       }
 
-      if (!rid || activeModalRequestId === null) return;
-      if (String(activeModalRequestId) !== String(rid)) {
+      if (!rid || activeListRequestId === null) return;
+      if (String(activeListRequestId) !== String(rid)) {
         evt.detail.shouldSwap = false;
       }
     });
@@ -250,8 +320,101 @@ const CargoApp = (() => {
   function loadCargos(queryString = "") {
     const target = document.getElementById("cargo-list");
     if (!target) return;
-    const url = `/api/cargos/${queryString ? `?${queryString}` : ""}`;
+
+    listRequestSeq += 1;
+    activeListRequestId = listRequestSeq;
+
+    setCargoListLoading("Загрузка…");
+
+    const u = new URL("/api/cargos/", window.location.origin);
+    if (queryString) {
+      u.search = queryString.startsWith("?") ? queryString : `?${queryString}`;
+    }
+    u.searchParams.set("_rid", String(activeListRequestId));
+
+    const url = `${u.pathname}${u.search}`;
     htmx.ajax("GET", url, { target: "#cargo-list", swap: "innerHTML" });
+  }
+
+  function getPriceRefreshSink() {
+    let sink = document.getElementById("price-refresh-sink");
+    if (sink) return sink;
+
+    sink = document.createElement("div");
+    sink.id = "price-refresh-sink";
+    sink.className = "hidden";
+    sink.setAttribute("aria-hidden", "true");
+    document.body.appendChild(sink);
+    return sink;
+  }
+
+  function getDisplayedCargoCount() {
+    return document.querySelectorAll(".cargo-card").length;
+  }
+
+  function getDisplayedCargoIds(maxItems = 200) {
+    const cards = document.querySelectorAll(".cargo-card[data-cargo-open]");
+    const out = [];
+    const seen = new Set();
+
+    for (const card of cards) {
+      const raw = card.getAttribute("data-cargo-open");
+      if (!raw) continue;
+      const id = String(raw).trim();
+      if (!id) continue;
+      if (!/^\d+$/.test(id)) continue;
+      if (seen.has(id)) continue;
+
+      seen.add(id);
+      out.push(id);
+
+      if (out.length >= maxItems) break;
+    }
+
+    return out;
+  }
+
+  function refreshVisiblePrices() {
+    if (document.hidden) return;
+
+    const token = getToken();
+    if (!token) return;
+
+    const ids = getDisplayedCargoIds(200);
+    if (!ids.length) return;
+
+    const query = buildCurrentCargosQuery();
+
+    const u = new URL("/api/cargos/prices/", window.location.origin);
+    if (query) {
+      u.search = query.startsWith("?") ? query : `?${query}`;
+    }
+    u.searchParams.set("seen_ids", ids.join(","));
+    priceRefreshRequestSeq += 1;
+    u.searchParams.set("_rid", String(priceRefreshRequestSeq));
+
+    const url = `${u.pathname}${u.search}`;
+    getPriceRefreshSink();
+    htmx.ajax("GET", url, { target: "#price-refresh-sink", swap: "innerHTML" });
+  }
+
+  function startPriceAutoRefresh() {
+    if (priceRefreshTimer) return;
+
+    const intervalMs = 30000;
+    priceRefreshTimer = window.setInterval(refreshVisiblePrices, intervalMs);
+
+    // Prime a first refresh soon after initial list render.
+    window.setTimeout(refreshVisiblePrices, 5000);
+
+    // Also refresh shortly after list mutations (filters applied / load more).
+    document.body.addEventListener("htmx:afterSwap", (evt) => {
+      const target = evt.detail && evt.detail.target ? evt.detail.target : null;
+      if (!target) return;
+      if (target.id === "cargo-list" || target.id === "cargo-cards") {
+        window.setTimeout(refreshVisiblePrices, 1200);
+      }
+    });
   }
 
   function bindCargoClicks() {
@@ -355,8 +518,10 @@ const CargoApp = (() => {
     bindInfiniteScroll();
 
     try {
+      setCargoListLoading("Авторизация…");
       await ensureSession();
-      loadCargos("");
+      loadCargos(buildCurrentCargosQuery());
+      startPriceAutoRefresh();
     } catch (e) {
       const cargoList = document.getElementById("cargo-list");
       if (cargoList) cargoList.innerHTML = `<div class="muted">${e.message}</div>`;
@@ -369,7 +534,8 @@ const CargoApp = (() => {
         try {
           await loginWithInitData(devInput.value.trim());
           document.getElementById("dev-auth")?.classList.add("hidden");
-          loadCargos("");
+          loadCargos(buildCurrentCargosQuery());
+          startPriceAutoRefresh();
         } catch (e) {
           alert(e.message);
         }

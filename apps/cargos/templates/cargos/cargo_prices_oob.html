@@ -1,0 +1,35 @@
+{% for cargo in price_cards %}
+  <span
+    id="cargo-price-{{ cargo.cargo_id|default:cargo.id }}"
+    class="cargo-price cargo-price-inline"
+    hx-swap-oob="outerHTML"
+  >{{ cargo.price_display|default:cargo.price }}</span>
+{% endfor %}
+
+{% for cargo_id in missing_ids %}
+  <div id="cargo-card-{{ cargo_id }}" hx-swap-oob="delete"></div>
+{% endfor %}
+
+<div id="cargo-count" class="muted cargo-count" hx-swap-oob="true">{{ loaded_count }} из {{ total_count }}</div>
+
+<div id="load-more" hx-swap-oob="true">
+  {% if next_offset %}
+    <button
+      class="btn btn-secondary"
+      hx-get="/api/cargos/?{% if base_query %}{{ base_query }}&{% endif %}limit={{ limit }}&offset={{ next_offset }}"
+      hx-trigger="click"
+      hx-disabled-elt="this"
+      hx-sync="this:drop"
+      hx-target="#cargo-cards"
+      hx-swap="beforeend"
+      data-load-more="1"
+    >
+      <span class="load-more-label">Ещё</span>
+      <span class="load-more-indicator" aria-hidden="true">
+        <span class="spinner spinner-sm" aria-hidden="true"></span>
+        <span>Загрузка…</span>
+      </span>
+    </button>
+  {% endif %}
+  <div class="muted cargo-count cargo-count-bottom">{{ loaded_count }} из {{ total_count }}</div>
+</div>

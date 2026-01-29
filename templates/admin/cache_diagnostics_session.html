@@ -1,0 +1,134 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block content %}
+  <div id="content-main">
+    {% if message %}
+      <ul class="messagelist">
+        <li class="success">{{ message }}</li>
+      </ul>
+    {% endif %}
+
+    <p style="margin: 0 0 12px 0;">
+      <a href="{% url cache_diagnostics_url_name %}">← Назад к списку</a>
+    </p>
+
+    <div class="module">
+      <h2>Сессия</h2>
+      <table style="width: 100%;">
+        <tbody>
+          <tr>
+            <th style="text-align: left; width: 220px;">User</th>
+            <td><strong>#{{ session.user_id }}</strong> {{ session.user.username }}</td>
+          </tr>
+          <tr>
+            <th style="text-align: left;">Telegram</th>
+            <td class="quiet">
+              {% if telegram_user_id %}{{ telegram_user_id }}{% else %}-{% endif %}
+              {% if telegram_username %} (@{{ telegram_username }}){% endif %}
+            </td>
+          </tr>
+          <tr>
+            <th style="text-align: left;">Session ID</th>
+            <td class="quiet">{{ session.session_id }}</td>
+          </tr>
+          <tr>
+            <th style="text-align: left;">Created</th>
+            <td class="quiet">{{ session.created_at }}</td>
+          </tr>
+          <tr>
+            <th style="text-align: left;">Expires</th>
+            <td class="quiet">{{ session.expires_at }}</td>
+          </tr>
+          <tr>
+            <th style="text-align: left;">Revoked</th>
+            <td class="quiet">{{ session.revoked_at }}</td>
+          </tr>
+          <tr>
+            <th style="text-align: left;">Driver cache key</th>
+            <td class="quiet">{{ driver_cache_key }}</td>
+          </tr>
+          <tr>
+            <th style="text-align: left;">Cached sid</th>
+            <td class="quiet">
+              {% if cached_sid %}
+                {% if sid_matches %}ok{% else %}mismatch{% endif %}
+                {% if cached_ttl %} (TTL: {{ cached_ttl }}s){% endif %}
+              {% else %}
+                missing
+              {% endif %}
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="module aligned">
+      <h2>Действия</h2>
+      <form method="post" style="padding: 10px;">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="clear_user_cargo_cache" />
+        <div class="form-row">
+          <label for="id_include_details" style="display: flex; gap: 8px; align-items: center;">
+            <input type="checkbox" id="id_include_details" name="include_details" value="1" />
+            Включить детали (может быть медленнее)
+          </label>
+        </div>
+        <div class="submit-row">
+          <input type="submit" value="Очистить cargo cache пользователя" class="deletelink" />
+        </div>
+      </form>
+    </div>
+
+    <div class="module">
+      <h2>Ключи cargo cache</h2>
+      <table id="result_list">
+        <thead>
+          <tr>
+            <th scope="col">Key</th>
+            <th scope="col">TTL</th>
+            <th scope="col">Summary</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in cargo_list_key_rows %}
+            <tr class="{% cycle 'row1' 'row2' %}">
+              <th scope="row">
+                <a href="?key={{ row.key|urlencode }}">{{ row.key }}</a>
+              </th>
+              <td class="quiet">{% if row.ttl %}{{ row.ttl }}s{% else %}-{% endif %}</td>
+              <td class="quiet">
+                {% if row.summary %}
+                  {% if row.summary.cards_count is not None %}cards={{ row.summary.cards_count }}{% endif %}
+                  {% if row.summary.meta_size is not None %} meta={{ row.summary.meta_size }}{% endif %}
+                  {% if row.summary.sample_cargo_ids %} sample={{ row.summary.sample_cargo_ids }}{% endif %}
+                {% else %}
+                  -
+                {% endif %}
+              </td>
+            </tr>
+          {% empty %}
+            <tr class="row1">
+              <td colspan="3" class="quiet">Ключи не найдены.</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="module">
+      <h2>Значение ключа</h2>
+      <div style="padding: 10px;">
+        {% if selected_key %}
+          <div class="quiet" style="margin-bottom: 8px;"><strong>Key:</strong> {{ selected_key }}</div>
+        {% endif %}
+        {% if selected_value %}
+          <pre style="white-space: pre-wrap; max-height: 420px; overflow: auto;">{{ selected_value }}</pre>
+        {% else %}
+          <div class="quiet">Выберите ключ для просмотра значения.</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+{% endblock %}
+

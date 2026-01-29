@@ -1,0 +1,21 @@
+{% extends "admin/base.html" %}
+{% load i18n static %}
+
+{% block title %}{% if subtitle %}{{ subtitle }} | {% endif %}{{ title }} | Cargo Viewer{% endblock %}
+
+{% block extrastyle %}
+  {{ block.super }}
+  <link rel="stylesheet" href="{% static 'css/admin_panel.css' %}?v=4">
+  <link rel="stylesheet" href="{% static 'css/django_admin.css' %}?v=3">
+{% endblock %}
+
+{% block bodyclass %}{{ block.super }} admin-body{% endblock %}
+
+{% block branding %}
+  <div id="site-name"><a href="{% url 'admin:index' %}">Cargo Viewer</a></div>
+  {% if user.is_anonymous %}
+    {% include "admin/color_theme_toggle.html" %}
+  {% endif %}
+{% endblock %}
+
+{% block nav-global %}{% endblock %}

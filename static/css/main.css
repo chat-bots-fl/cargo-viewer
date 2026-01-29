@@ -385,24 +385,32 @@ button.htmx-request .load-more-indicator {
   gap: 10px;
 }
 
-.cargo-route { font-weight: 700; }
+.cargo-route { font-weight: 700; flex: 1 1 auto; min-width: 0; }
 .cargo-price { color: var(--accent); font-weight: 800; }
 
+.cargo-price-inline { white-space: nowrap; font-size: 16px; }
+
 .cargo-locations {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-  gap: 10px;
-  align-items: start;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
 }
 
 .cargo-location {
   display: grid;
   gap: 2px;
   min-width: 0;
+  flex: 0 1 auto;
+}
+
+.cargo-location:last-child {
+  flex: 1 1 auto;
 }
 
 .cargo-city {
   font-weight: 700;
+  font-size: 15px;
   line-height: 1.15;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -426,6 +434,19 @@ button.htmx-request .load-more-indicator {
   gap: 10px;
   flex-wrap: wrap;
   font-size: 12px;
+}
+
+.cargo-attrs-left,
+.cargo-attrs-right {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+
+.cargo-loading-type-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
 }
 
 .cargo-bottom strong {

@@ -20,7 +20,7 @@
   </section>
 
   <section class="card">
-    <div class="card-title">Сессия в кэше</div>
+    <div class="card-title">Сессия в кеше</div>
     <div class="muted">Key: <code>{{ driver_cache_key }}</code></div>
     <div style="margin-top:6px;">
       <strong>cached sid:</strong>
@@ -39,7 +39,7 @@
 
   <section class="card">
     <div class="card-title">Действия</div>
-    <form method="post">
+    <form method="post" class="filters">
       {% csrf_token %}
       <input type="hidden" name="action" value="clear_user_cargo_cache" />
       <label style="display:flex;gap:8px;align-items:center;margin-bottom:10px;">
@@ -55,15 +55,15 @@
     <div class="muted" style="margin-bottom:10px;">
       Показаны первые 200 ключей. Для первых 50 — вычисляется краткая сводка.
     </div>
-    <table style="width:100%;border-collapse:collapse;">
+    <table class="admin-table">
       <thead>
         <tr>
-          <th style="text-align:left;">Key</th>
-          <th style="text-align:left;">TTL</th>
-          <th style="text-align:left;">Cards</th>
-          <th style="text-align:left;">Size</th>
-          <th style="text-align:left;">Sample IDs</th>
-          <th style="text-align:left;">View</th>
+          <th>Key</th>
+          <th>TTL</th>
+          <th>Cards</th>
+          <th>Size</th>
+          <th>Sample IDs</th>
+          <th>View</th>
         </tr>
       </thead>
       <tbody>
@@ -92,3 +92,4 @@
     </section>
   {% endif %}
 {% endblock %}
+
