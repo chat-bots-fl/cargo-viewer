@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from .base import *
+from .base import _env
 
 """
 GOAL: Configure development environment settings with debug enabled and verbose logging.
@@ -174,11 +175,16 @@ HSTS_ENABLED = False
 # Allow Telegram WebApp to be embedded in Telegram
 X_FRAME_OPTIONS = "SAMEORIGIN"
 
-# Skip Telegram hash validation in development for easier testing
-TELEGRAM_SKIP_HASH_VALIDATION = True
-
-# Skip Telegram auth_date validation in development for easier testing
-TELEGRAM_SKIP_AUTH_DATE_VALIDATION = True
+# Telegram validation helpers (can be relaxed via env for local debugging)
+TELEGRAM_SKIP_HASH_VALIDATION = (_env("TELEGRAM_SKIP_HASH_VALIDATION", "False") or "").lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
+TELEGRAM_SKIP_AUTH_DATE_VALIDATION = (
+    _env("TELEGRAM_SKIP_AUTH_DATE_VALIDATION", "False") or ""
+).lower() in {"1", "true", "yes", "on"}
 
 # Skip cache validation in development (for development without Redis)
 SKIP_CACHE_VALIDATION = True

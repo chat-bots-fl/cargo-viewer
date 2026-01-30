@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import logging
+
 from dataclasses import dataclass
 from typing import Any
 
+from django.conf import settings
 from django.contrib.auth.models import AnonymousUser
 from django.contrib.auth import get_user_model
 from django.http import HttpRequest, HttpResponse
@@ -11,6 +14,8 @@ from django.utils.deprecation import MiddlewareMixin
 from apps.auth.services import TokenService
 
 User = get_user_model()
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -37,6 +42,23 @@ class JWTAuthenticationMiddleware(MiddlewareMixin):
       - Sets request.user to the authenticated Django user when possible
       - Does not block request handling (views enforce auth via decorators)
     """
+    """
+    GOAL: Attach auth context from JWT without leaking secrets into logs.
+
+    PARAMETERS:
+      request: HttpRequest - Django request - Reads Authorization/cookies
+
+    RETURNS:
+      None
+
+    RAISES:
+      None (invalid tokens result in AnonymousUser)
+
+    GUARANTEES:
+      - Never logs raw JWT/session_token/Authorization header values
+      - On invalid token, request.user is AnonymousUser
+      - On valid token, request.auth_context is populated
+    """
     def process_request(self, request: HttpRequest) -> None:
         request.auth_context = RequestAuthContext()  # type: ignore[attr-defined]
 
@@ -48,45 +70,51 @@ class JWTAuthenticationMiddleware(MiddlewareMixin):
             token = str(request.COOKIES.get("session_token") or "").strip()
 
         # Логирование для отладки
-        import logging
-        logger = logging.getLogger(__name__)
-        logger.info(f"JWTMiddleware - path: {request.path}, header: {header[:50] if header else 'none'}, cookie_token: {bool(request.COOKIES.get('session_token'))}, token: {token[:20] if token else 'none'}...")
+        logger.debug(
+            "JWT auth: token present (path=%s source=%s)",
+            request.path,
+            "header" if header.startswith("Bearer ") else "cookie",
+        )
 
         if not token:
-            logger.warning(f"JWTMiddleware - no token found, setting AnonymousUser")
+            logger.debug("JWT auth: no token (path=%s)", request.path)
             request.user = getattr(request, "user", AnonymousUser())
             return
 
         try:
-            logger.info(f"JWTMiddleware - calling TokenService.validate_session with token: {token[:20]}...")
             result = TokenService.validate_session(token)
-            logger.info(f"JWTMiddleware - token validated, user_dto: {result.user_dto}, driver_dto: {result.driver_dto}")
-        except Exception as e:
-            logger.error(f"JWTMiddleware - token validation failed: {e}", exc_info=True)
+        except Exception:
+            logger.info(
+                "JWT auth: token validation failed (path=%s)",
+                request.path,
+                exc_info=getattr(settings, "DEBUG", False),
+            )
             request.user = AnonymousUser()
             return
 
-        logger.info(f"JWTMiddleware - setting auth_context.driver_data: {result.driver_dto}")
-        request.auth_context.driver_data = result.driver_dto  # type: ignore[attr-defined]
+        request.auth_context.driver_data = result.driver_data  # type: ignore[attr-defined]
         request.auth_context.refreshed_token = result.refreshed_token  # type: ignore[attr-defined]
         
-        if result.user_dto:
+        if result.driver_data.get("user_id"):
             try:
-                logger.info(f"JWTMiddleware - getting user with id: {result.user_dto.id}")
-                request.user = User.objects.get(id=int(result.user_dto.id))
-                logger.info(f"JWTMiddleware - user set: {request.user.username}, user.id: {request.user.id}")
+                request.user = User.objects.get(id=int(result.driver_data["user_id"]))
                 
                 # Проверяем наличие driverprofile
-                if hasattr(request.user, 'driverprofile'):
-                    logger.info(f"JWTMiddleware - user has driverprofile attribute")
+                if hasattr(request.user, "driver_profile"):
+                    pass
                 else:
-                    logger.warning(f"JWTMiddleware - user does NOT have driverprofile attribute")
+                    pass
                     
-            except Exception as e:
-                logger.error(f"JWTMiddleware - failed to get user: {e}", exc_info=True)
+            except Exception:
+                logger.warning(
+                    "JWT auth: failed to load Django user (path=%s user_id=%s)",
+                    request.path,
+                    result.driver_data.get("user_id"),
+                    exc_info=getattr(settings, "DEBUG", False),
+                )
                 request.user = AnonymousUser()
         else:
-            logger.warning(f"JWTMiddleware - user_dto is None, setting AnonymousUser")
+            logger.debug("JWT auth: user_id missing in token (path=%s)", request.path)
             request.user = AnonymousUser()
 
     """

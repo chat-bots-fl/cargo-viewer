@@ -181,12 +181,17 @@ class SubscriptionServiceTests(TestCase):
     
     def test_activate_from_promo_creates_subscription(self):
         """Test that activate_from_promo creates new subscription."""
+        now = dj_timezone.now()
         promocode = PromoCode.objects.create(
             code="TESTCODE",
-            discount_percent=100,
-            subscription_days=7,
-            is_active=True,
-            max_uses=100
+            action="extend_subscription",
+            days_to_add=7,
+            valid_from=now - timedelta(days=1),
+            valid_until=now + timedelta(days=30),
+            max_uses=100,
+            current_uses=0,
+            disabled=False,
+            created_by=self.user,
         )
         
         subscription = SubscriptionService.activate_from_promo(self.user, promocode)
@@ -209,12 +214,17 @@ class SubscriptionServiceTests(TestCase):
             expires_at=dj_timezone.now() + timedelta(days=10)
         )
         
+        now = dj_timezone.now()
         promocode = PromoCode.objects.create(
             code="TESTCODE",
-            discount_percent=100,
-            subscription_days=7,
-            is_active=True,
-            max_uses=100
+            action="extend_subscription",
+            days_to_add=7,
+            valid_from=now - timedelta(days=1),
+            valid_until=now + timedelta(days=30),
+            max_uses=100,
+            current_uses=0,
+            disabled=False,
+            created_by=self.user,
         )
         
         subscription = SubscriptionService.activate_from_promo(self.user, promocode)
@@ -236,12 +246,17 @@ class SubscriptionServiceTests(TestCase):
             expires_at=dj_timezone.now() - timedelta(days=1)
         )
         
+        now = dj_timezone.now()
         promocode = PromoCode.objects.create(
             code="TESTCODE",
-            discount_percent=100,
-            subscription_days=7,
-            is_active=True,
-            max_uses=100
+            action="extend_subscription",
+            days_to_add=7,
+            valid_from=now - timedelta(days=1),
+            valid_until=now + timedelta(days=30),
+            max_uses=100,
+            current_uses=0,
+            disabled=False,
+            created_by=self.user,
         )
         
         subscription = SubscriptionService.activate_from_promo(self.user, promocode)
@@ -251,12 +266,17 @@ class SubscriptionServiceTests(TestCase):
     
     def test_activate_from_promo_inactive_promo(self):
         """Test that activate_from_promo handles inactive promocode."""
+        now = dj_timezone.now()
         promocode = PromoCode.objects.create(
             code="TESTCODE",
-            discount_percent=100,
-            subscription_days=7,
-            is_active=False,
-            max_uses=100
+            action="extend_subscription",
+            days_to_add=7,
+            valid_from=now - timedelta(days=1),
+            valid_until=now + timedelta(days=30),
+            max_uses=100,
+            current_uses=0,
+            disabled=True,
+            created_by=self.user,
         )
         
         from django.core.exceptions import ValidationError
@@ -265,13 +285,17 @@ class SubscriptionServiceTests(TestCase):
     
     def test_activate_from_promo_expired_promo(self):
         """Test that activate_from_promo handles expired promocode."""
+        now = dj_timezone.now()
         promocode = PromoCode.objects.create(
             code="TESTCODE",
-            discount_percent=100,
-            subscription_days=7,
-            is_active=True,
+            action="extend_subscription",
+            days_to_add=7,
+            valid_from=now - timedelta(days=30),
+            valid_until=now - timedelta(days=1),
             max_uses=100,
-            expires_at=dj_timezone.now() - timedelta(days=1)
+            current_uses=0,
+            disabled=False,
+            created_by=self.user,
         )
         
         from django.core.exceptions import ValidationError
@@ -280,13 +304,17 @@ class SubscriptionServiceTests(TestCase):
     
     def test_activate_from_promo_max_uses_reached(self):
         """Test that activate_from_promo handles promocode with max uses reached."""
+        now = dj_timezone.now()
         promocode = PromoCode.objects.create(
             code="TESTCODE",
-            discount_percent=100,
-            subscription_days=7,
-            is_active=True,
+            action="extend_subscription",
+            days_to_add=7,
+            valid_from=now - timedelta(days=1),
+            valid_until=now + timedelta(days=30),
             max_uses=1,
-            uses_count=1
+            current_uses=1,
+            disabled=False,
+            created_by=self.user,
         )
         
         from django.core.exceptions import ValidationError
@@ -371,12 +399,17 @@ class SubscriptionServiceTests(TestCase):
     
     def test_activate_from_promo_with_custom_days(self):
         """Test that activate_from_promo uses custom days from promocode."""
+        now = dj_timezone.now()
         promocode = PromoCode.objects.create(
             code="TESTCODE",
-            discount_percent=100,
-            subscription_days=14,
-            is_active=True,
-            max_uses=100
+            action="extend_subscription",
+            days_to_add=14,
+            valid_from=now - timedelta(days=1),
+            valid_until=now + timedelta(days=30),
+            max_uses=100,
+            current_uses=0,
+            disabled=False,
+            created_by=self.user,
         )
         
         subscription = SubscriptionService.activate_from_promo(self.user, promocode)

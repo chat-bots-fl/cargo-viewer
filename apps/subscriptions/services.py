@@ -9,7 +9,6 @@ from django.utils import timezone
 from django.core.exceptions import ValidationError
 
 from apps.audit.services import AuditService
-from apps.core.dtos import SubscriptionDTO, model_to_dto
 from apps.core.query_utils import (
     get_subscription_status_cached,
     invalidate_subscription_cache,
@@ -27,13 +26,13 @@ class SubscriptionService:
     GOAL: Activate or extend a subscription after a successful payment.
 
     PARAMETERS:
-      user: Any - Django user instance - Must be non-null
-      payment: Any - Payment instance - Must have status='succeeded'
-      days: int - Subscription length in days - Must be > 0
+      payment: Any - Payment instance - Must have user, status='succeeded', and subscription_days
+      user: Any | None - Explicit user override - Default None (uses payment.user)
+      days: int | None - Explicit days override - Default None (uses payment.subscription_days)
       subscription_repo: SubscriptionRepository | None - Repository for subscription operations - Optional
 
     RETURNS:
-      SubscriptionDTO - Created or updated subscription DTO - Never None
+      Subscription - Created or updated subscription model - Never None
 
     RAISES:
       ValidationError: If payment not succeeded or days invalid
@@ -48,16 +47,23 @@ class SubscriptionService:
     @staticmethod
     @transaction.atomic
     def activate_from_payment(
-        *,
-        user: Any,
         payment: Any,
-        days: int,
+        user: Any | None = None,
+        days: int | None = None,
         subscription_repo: SubscriptionRepository | None = None,
-    ) -> SubscriptionDTO:
+    ) -> Subscription:
         """
         Extend subscription based on existing expiry and regenerate access token.
         Invalidates subscription cache after update.
         """
+        if user is None:
+            user = getattr(payment, "user", None)
+        if not user:
+            raise ValidationError("Payment.user is required")
+
+        if days is None:
+            days = int(getattr(payment, "subscription_days", 0) or 0)
+
         if getattr(payment, "status", None) != "succeeded":
             raise ValidationError(f"Payment not succeeded: {getattr(payment, 'status', None)}")
         if days <= 0:
@@ -65,9 +71,8 @@ class SubscriptionService:
 
         # Use repository if provided, otherwise direct ORM access for backward compatibility
         if subscription_repo is not None:
-            from asgiref.sync import sync_to_async
-            existing_subscription = sync_to_async(subscription_repo.get_by_user_with_relations)(user.id)
-            if existing_subscription:
+            existing_subscription = subscription_repo.get_by_user_with_relations(int(getattr(user, "id", 0) or 0))
+            if existing_subscription is not None:
                 subscription = existing_subscription
                 created = False
             else:
@@ -109,7 +114,7 @@ class SubscriptionService:
         )
 
         invalidate_subscription_cache(int(getattr(user, "id", 0)))
-        return model_to_dto(subscription, SubscriptionDTO)
+        return subscription
 
     """
     GOAL: Activate or extend a subscription using a validated promo code.
@@ -120,7 +125,7 @@ class SubscriptionService:
       subscription_repo: SubscriptionRepository | None - Repository for subscription operations - Optional
 
     RETURNS:
-      SubscriptionDTO - Updated subscription DTO - Never None
+      Subscription - Updated subscription model - Never None
 
     RAISES:
       ValidationError: If promo_code cannot be used
@@ -133,11 +138,10 @@ class SubscriptionService:
     @staticmethod
     @transaction.atomic
     def activate_from_promo(
-        *,
         user: Any,
         promo_code: Any,
         subscription_repo: SubscriptionRepository | None = None,
-    ) -> SubscriptionDTO:
+    ) -> Subscription:
         """
         Extend subscription and bind promo_code, regenerating access_token.
         Invalidates subscription cache after update.
@@ -149,9 +153,8 @@ class SubscriptionService:
 
         # Use repository if provided, otherwise direct ORM access for backward compatibility
         if subscription_repo is not None:
-            from asgiref.sync import sync_to_async
-            existing_subscription = sync_to_async(subscription_repo.get_by_user_with_relations)(user.id)
-            if existing_subscription:
+            existing_subscription = subscription_repo.get_by_user_with_relations(int(getattr(user, "id", 0) or 0))
+            if existing_subscription is not None:
                 subscription = existing_subscription
                 created = False
             else:
@@ -186,7 +189,7 @@ class SubscriptionService:
         )
 
         invalidate_subscription_cache(int(getattr(user, "id", 0)))
-        return model_to_dto(subscription, SubscriptionDTO)
+        return subscription
 
     """
     GOAL: Decide whether a user is allowed to access a feature (paid/free) without deploys.
@@ -208,15 +211,26 @@ class SubscriptionService:
     """
     @staticmethod
     def is_access_allowed(
+        user: Any | None = None,
         *,
-        user_id: int,
-        feature_key: str,
+        user_id: int | None = None,
+        feature_key: str = "respond_to_cargo",
         feature_flag_repo: FeatureFlagRepository | None = None,
     ) -> bool:
         """
         Enforce paid feature gating via FeatureFlag + Subscription state.
         Uses cached subscription status to avoid repeated database queries.
         """
+        if user_id is None:
+            if not user:
+                return False
+            if not getattr(user, "is_authenticated", False):
+                return False
+            user_id = int(getattr(user, "id", 0) or 0)
+
+        if not user_id or int(user_id) <= 0:
+            return False
+
         feature_key = str(feature_key or "").strip()
         if not feature_key:
             return False
@@ -224,15 +238,18 @@ class SubscriptionService:
         if feature_key != "respond_to_cargo":
             return True
 
-        # Use repository if provided, otherwise direct ORM access for backward compatibility
+        from apps.feature_flags.models import FeatureFlag, SystemSetting
+
+        # Prefer FeatureFlag when configured; fallback to SystemSetting for defaults.
         if feature_flag_repo is not None:
-            from asgiref.sync import sync_to_async
-            payments_enabled = sync_to_async(feature_flag_repo.is_enabled)("payments_enabled")
+            payments_enabled = bool(feature_flag_repo.is_enabled("payments_enabled"))
         else:
-            from apps.feature_flags.models import FeatureFlag
             payments_flag = FeatureFlag.objects.filter(key="payments_enabled").first()
-            payments_enabled = payments_flag.enabled if payments_flag else False
-        
+            payments_enabled = bool(payments_flag.enabled) if payments_flag else None
+
+        if payments_enabled is None:
+            payments_enabled = bool(SystemSetting.get_setting("payments_enabled", True))
+
         if not payments_enabled:
             return False
 
@@ -244,4 +261,3 @@ class SubscriptionService:
         if status["is_expired"]:
             return False
         return True
-

@@ -10,6 +10,7 @@ from unittest.mock import Mock, patch
 from decimal import Decimal
 from django.test import TestCase, override_settings
 from django.contrib.auth import get_user_model
+from django.core.cache import cache
 from requests.exceptions import HTTPError
 
 from apps.payments.services import YuKassaClient, PaymentService, YuKassaAPIError

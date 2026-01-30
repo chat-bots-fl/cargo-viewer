@@ -6,13 +6,44 @@ that use @api_csrf_exempt decorator, providing an additional layer of security
 beyond Django's built-in CSRF protection.
 """
 
+import json
 import logging
-from typing import Optional
+from typing import Any, Callable, Optional
 
 from django.conf import settings
 from django.http import HttpRequest, HttpResponse, JsonResponse
 
 logger = logging.getLogger(__name__)
+
+
+"""
+GOAL: Create a JsonResponse that also provides a .json() helper for tests.
+
+PARAMETERS:
+  payload: dict[str, Any] - JSON-serializable response payload - Must be a dict
+  status: int - HTTP status code - Must be positive
+
+RETURNS:
+  JsonResponse - Django JsonResponse with added .json() method - Never None
+
+RAISES:
+  TypeError: If payload is not JSON serializable
+
+GUARANTEES:
+  - Returned response is a valid Django JsonResponse
+  - Returned response supports response.json() in RequestFactory-based tests
+"""
+def _json_response(payload: dict[str, Any], status: int) -> JsonResponse:
+    """
+    Build JsonResponse and attach a small json() helper for parity with Django test client responses.
+    """
+    response = JsonResponse(payload, status=status)
+
+    def _json() -> Any:
+        return json.loads(response.content.decode(response.charset))
+
+    setattr(response, "json", _json)
+    return response
 
 
 """
@@ -200,9 +231,9 @@ class APICSRFProtectionMiddleware:
                     "reason": reason,
                 }
             )
-            
+             
             # Return 403 Forbidden
-            return JsonResponse(
+            return _json_response(
                 {
                     "error": {
                         "code": "CSRF_VALIDATION_FAILED",
@@ -210,11 +241,81 @@ class APICSRFProtectionMiddleware:
                         "details": reason,
                     }
                 },
-                status=403
+                status=403,
             )
         
         # Origin is valid, proceed with request
         return self.get_response(request)
+
+    """
+    GOAL: Apply API CSRF origin validation based on view decoration in real Django request flow.
+
+    PARAMETERS:
+      request: HttpRequest - Django request object - Not None
+      view_func: Callable - Django view callable - Not None
+      view_args: tuple[Any, ...] - Positional args for the view - Can be empty
+      view_kwargs: dict[str, Any] - Keyword args for the view - Can be empty
+
+    RETURNS:
+      Optional[HttpResponse] - 403 JsonResponse when blocked, otherwise None to continue - Can be None
+
+    RAISES:
+      None
+
+    GUARANTEES:
+      - Only validates state-changing requests (POST/PUT/PATCH/DELETE)
+      - Only applies to views marked with @api_csrf_exempt (via view_func._api_csrf_exempt)
+      - Returns 403 with JSON error payload when origin is invalid
+    """
+    def process_view(
+        self,
+        request: HttpRequest,
+        view_func: Callable,
+        view_args: tuple[Any, ...],
+        view_kwargs: dict[str, Any],
+    ) -> Optional[HttpResponse]:
+        """
+        Mirror the RequestFactory-based logic using Django's process_view hook to detect decorated views.
+        """
+        if not self.enabled:
+            return None
+        if not requires_csrf_protection(request):
+            return None
+        if not getattr(view_func, "_api_csrf_exempt", False):
+            return None
+
+        setattr(request, "_api_csrf_exempt", True)
+
+        is_allowed, reason = validate_origin(request, self.allowed_origins, self.allow_same_origin)
+        if is_allowed:
+            return None
+
+        logger.warning(
+            "API CSRF protection blocked request - Path: %s - Method: %s - Origin: %s - Reason: %s - IP: %s",
+            request.path,
+            request.method,
+            request.META.get("HTTP_ORIGIN", request.META.get("HTTP_REFERER", "")),
+            reason,
+            self._get_client_ip(request),
+            extra={
+                "request": request,
+                "path": request.path,
+                "method": request.method,
+                "origin": request.META.get("HTTP_ORIGIN", request.META.get("HTTP_REFERER", "")),
+                "reason": reason,
+            },
+        )
+
+        return _json_response(
+            {
+                "error": {
+                    "code": "CSRF_VALIDATION_FAILED",
+                    "message": "Request origin validation failed",
+                    "details": reason,
+                }
+            },
+            status=403,
+        )
     
     def _get_client_ip(self, request: HttpRequest) -> str:
         """

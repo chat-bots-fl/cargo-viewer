@@ -46,10 +46,10 @@ ENV PATH="/opt/venv/bin:$PATH"
 RUN pip install --upgrade pip setuptools wheel
 
 # Copy requirements files
-COPY requirements.txt /tmp/requirements.txt
+COPY requirements-prod.txt /tmp/requirements-prod.txt
 
 # Install Python dependencies
-RUN pip install -r /tmp/requirements.txt
+RUN pip install -r /tmp/requirements-prod.txt
 
 ################################################################################
 # Stage 2: Runtime
@@ -102,7 +102,7 @@ RUN mkdir -p /app/static /app/media /app/logs \
 USER appuser
 
 # Collect static files
-RUN python manage.py collectstatic --noinput --settings=config.settings.production || true
+RUN SECRET_KEY=build-time-only python manage.py collectstatic --noinput --settings=config.settings.production
 
 # Expose application port
 EXPOSE 8000

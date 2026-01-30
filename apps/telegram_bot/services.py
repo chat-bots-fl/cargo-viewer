@@ -7,256 +7,279 @@ import requests
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import transaction
-from datetime import datetime
 
 from apps.audit.services import AuditService
-from apps.core.dtos import TelegramResponseDTO, dto_to_dict
 from apps.core.repositories import DriverCargoResponseRepository
+from apps.feature_flags.models import SystemSetting
 from apps.subscriptions.services import SubscriptionService
 from apps.telegram_bot.models import DriverCargoResponse
 
 logger = logging.getLogger(__name__)
 
-# Import Sentry monitoring functions (graceful degradation if not available)
-try:
-    from apps.core.monitoring import (
-        capture_exception,
-        add_breadcrumb,
-        set_transaction,
-        set_user_context,
-    )
-    SENTRY_AVAILABLE = True
-except ImportError:
-    SENTRY_AVAILABLE = False
-    logger.warning("Sentry monitoring not available in telegram_bot")
-    
-    # Fallback functions
-    def capture_exception(*args, **kwargs):
+
+"""
+GOAL: Read Telegram bot token from SystemSetting or Django settings.
+
+PARAMETERS:
+  None
+
+RETURNS:
+  str - Telegram bot token - Empty string when not configured
+
+RAISES:
+  None
+
+GUARANTEES:
+  - Never returns None
+  - Strips surrounding whitespace
+"""
+def _get_telegram_bot_token() -> str:
+    """
+    Prefer SystemSetting('telegram_bot_token'), fallback to settings.TELEGRAM_BOT_TOKEN.
+    """
+    token = SystemSetting.get_setting("telegram_bot_token", "")
+    if not token:
+        token = getattr(settings, "TELEGRAM_BOT_TOKEN", "")
+    return str(token or "").strip()
+
+
+"""
+GOAL: Read Telegram responses chat id from SystemSetting or Django settings.
+
+PARAMETERS:
+  None
+
+RETURNS:
+  str - Chat id for admin responses - Empty string when not configured
+
+RAISES:
+  None
+
+GUARANTEES:
+  - Never returns None
+  - Strips surrounding whitespace
+"""
+def _get_telegram_responses_chat_id() -> str:
+    """
+    Prefer SystemSetting('telegram_chat_id'), fallback to settings.TELEGRAM_RESPONSES_CHAT_ID.
+    """
+    chat_id = str(SystemSetting.get_setting("telegram_chat_id", "") or "").strip()
+    if chat_id:
+        return chat_id
+
+    env_chat_id = int(getattr(settings, "TELEGRAM_RESPONSES_CHAT_ID", 0) or 0)
+    return str(env_chat_id) if env_chat_id > 0 else ""
+
+
+"""
+GOAL: Send a Telegram sendMessage request and return parsed JSON on success.
+
+PARAMETERS:
+  token: str - Bot token - Must be non-empty
+  payload: dict[str, Any] - sendMessage payload - Must include chat_id and text
+
+RETURNS:
+  dict[str, Any] | None - Telegram response JSON when ok=True, else None
+
+RAISES:
+  requests.RequestException: If network/HTTP layer fails
+  ValueError: If response body is not valid JSON
+
+GUARANTEES:
+  - Returns None on non-ok Telegram responses
+"""
+def _send_message_raw(token: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+    """
+    POST https://api.telegram.org/bot{token}/sendMessage and validate {"ok": true}.
+    """
+    resp = requests.post(f"https://api.telegram.org/bot{token}/sendMessage", json=payload, timeout=10)
+    resp.raise_for_status()
+    data = resp.json()
+    if not isinstance(data, dict) or not data.get("ok"):
         return None
-    def add_breadcrumb(*args, **kwargs):
-        pass
-    def set_transaction(*args, **kwargs):
-        return None
-    def set_user_context(*args, **kwargs):
-        pass
+    return data
 
 
 class TelegramBotService:
     """
-    Minimal Telegram Bot API client for WebApp flows.
+    Telegram bot helper service (sending messages + processing driver responses).
     """
 
     """
     GOAL: Send a message via Telegram Bot API.
 
     PARAMETERS:
-      chat_id: int - Target chat id - Must be > 0
-      text: str - Message text - Must be non-empty
-      reply_markup: dict[str, Any] | None - Telegram reply_markup - Optional
+      chat_id: str | int - Target chat id - Must be non-empty
+      text: str - Message text - Can be empty
+      parse_mode: str | None - Telegram parse mode (e.g. HTML/Markdown) - Optional
+      reply_markup: dict[str, Any] | None - Telegram reply_markup JSON - Optional
 
     RETURNS:
-      TelegramResponseDTO - Telegram response DTO - Never None
+      bool - True when Telegram returns ok=True - Never None
 
     RAISES:
-      ValidationError: If TELEGRAM_BOT_TOKEN missing or inputs invalid
-      requests.HTTPError: If Telegram API returns non-200
+      None (best-effort; returns False on failures)
 
     GUARANTEES:
-      - Uses HTTPS Telegram Bot API endpoint
+      - Uses token from SystemSetting or settings
+      - Returns False when token missing
     """
     @staticmethod
-    def send_message(*, chat_id: int, text: str, reply_markup: dict[str, Any] | None = None) -> TelegramResponseDTO:
+    def send_message(
+        *,
+        chat_id: str | int,
+        text: str,
+        parse_mode: str | None = None,
+        reply_markup: dict[str, Any] | None = None,
+    ) -> bool:
         """
-        POST sendMessage with optional reply_markup.
+        Compose sendMessage payload and interpret Telegram ok flag as success.
         """
-        token = settings.TELEGRAM_BOT_TOKEN
+        token = _get_telegram_bot_token()
         if not token:
-            raise ValidationError("TELEGRAM_BOT_TOKEN is not configured")
-        if chat_id <= 0:
-            raise ValidationError("chat_id must be > 0")
-        text = str(text or "").strip()
-        if not text:
-            raise ValidationError("text is required")
+            logger.warning("Telegram bot token is not configured")
+            return False
 
-        # Add breadcrumb for Telegram message send
-        add_breadcrumb(
-            message=f"Telegram send_message: chat_id={chat_id}",
-            category="telegram",
-            level="info",
-            data={
-                "service": "telegram",
-                "chat_id": chat_id,
-                "text_length": len(text),
-            }
-        )
-        
-        # Start transaction for performance monitoring
-        transaction = set_transaction(
-            name="Telegram send_message",
-            op="telegram.send_message",
-            tags={
-                "service": "telegram",
-            }
-        )
-        
-        url = f"https://api.telegram.org/bot{token}/sendMessage"
-        payload: dict[str, Any] = {"chat_id": int(chat_id), "text": text}
+        payload: dict[str, Any] = {"chat_id": chat_id, "text": str(text or "")}
+        if parse_mode:
+            payload["parse_mode"] = parse_mode
         if reply_markup is not None:
             payload["reply_markup"] = reply_markup
 
         try:
-            if transaction:
-                with transaction:
-                    resp = requests.post(url, json=payload, timeout=10)
-            else:
-                resp = requests.post(url, json=payload, timeout=10)
-            
-            resp.raise_for_status()
-            
-            # Add breadcrumb for successful message send
-            add_breadcrumb(
-                message=f"Telegram send_message success",
-                category="telegram",
-                level="info",
-                data={
-                    "service": "telegram",
-                    "chat_id": chat_id,
-                }
-            )
-            
-            response_json = resp.json()
-            return TelegramResponseDTO(
-                message_id=int((response_json.get("result") or {}).get("message_id") or 0) or None,
-                chat_id=chat_id,
-                text=text,
-                parse_mode=None,
-                reply_markup=reply_markup,
-                success=True,
-                error_message=None,
-                created_at=datetime.utcnow(),
-            )
-        except Exception as exc:
-            # Add breadcrumb for error
-            add_breadcrumb(
-                message=f"Telegram send_message error: {type(exc).__name__}",
-                category="telegram",
-                level="error",
-                data={
-                    "service": "telegram",
-                    "chat_id": chat_id,
-                    "error_type": type(exc).__name__,
-                }
-            )
-            
-            # Send exception to Sentry
-            capture_exception(
-                exc,
-                level="error",
-                extra={
-                    "service": "telegram",
-                    "chat_id": chat_id,
-                    "text_length": len(text),
-                },
-                tags={
-                    "service": "telegram",
-                    "operation": "send_message",
-                }
-            )
-            
-            return TelegramResponseDTO(
-                message_id=None,
-                chat_id=chat_id,
-                text=text,
-                parse_mode=None,
-                reply_markup=reply_markup,
-                success=False,
-                error_message=str(exc),
-                created_at=datetime.utcnow(),
-            )
+            data = _send_message_raw(token, payload)
+        except requests.RequestException as exc:
+            logger.warning("Telegram send_message failed: %s", exc)
+            return False
+        except ValueError as exc:
+            logger.warning("Telegram send_message invalid response: %s", exc)
+            return False
+
+        return data is not None
 
     """
-    GOAL: Send status update to a driver in Telegram.
+    GOAL: Send a status update message to Telegram.
 
     PARAMETERS:
-      driver_id: int - Telegram user id - Must be > 0
-      cargo_id: str - Cargo id - Must be non-empty
-      status: str - One of accepted/rejected/completed/sent - Must be non-empty
+      status: str - Status label - Must be non-empty
+      chat_id: str | int | None - Target chat id - Optional if driver_id provided
+      driver_id: int | None - Telegram user id - Optional if chat_id provided
+      cargo_id: str | None - Cargo id context - Optional
+      message: str | None - Optional custom message - Optional
 
     RETURNS:
       bool - True if sent successfully - Never None
 
     RAISES:
-      ValidationError: If inputs invalid
+      None (best-effort; returns False on failures)
 
     GUARANTEES:
-      - Errors are logged and return False (best-effort)
+      - Includes custom message in sent text when provided
     """
     @staticmethod
-    def send_status(*, driver_id: int, cargo_id: str, status: str) -> bool:
+    def send_status(
+        *,
+        status: str,
+        chat_id: str | int | None = None,
+        driver_id: int | None = None,
+        cargo_id: str | None = None,
+        message: str | None = None,
+    ) -> bool:
         """
-        Best-effort Telegram notification to the driver chat.
+        Format a status message and send via send_message.
         """
-        try:
-            TelegramBotService.send_message(
-                chat_id=int(driver_id),
-                text=f"Статус по грузу {cargo_id}: {status}",
-            )
-            return True
-        except Exception as exc:
-            logger.warning("Failed to send status: %s", exc)
+        target_chat_id = chat_id if chat_id is not None else driver_id
+        if target_chat_id is None:
             return False
 
+        status = str(status or "").strip()
+        if not status:
+            return False
+
+        if cargo_id:
+            base = f"Статус по грузу {cargo_id}: {status}"
+        else:
+            base = f"Status: {status}"
+
+        text = f"{base}\n{message}" if message else base
+        return TelegramBotService.send_message(chat_id=target_chat_id, text=text)
+
     """
-    GOAL: Handle a driver response to a cargo (idempotent) and forward it via Telegram bot.
+    GOAL: Forward a driver response to Telegram and optionally persist idempotency record.
 
     PARAMETERS:
-      user_id: int - Django user id - Must be > 0
-      telegram_user_id: int - Telegram user id - Must be > 0
-      cargo_id: str - Cargo id - Must be non-empty
-      phone: str - Driver phone number - Can be empty but recommended
-      name: str - Driver display name - Can be empty
-      driver_cargo_response_repo: DriverCargoResponseRepository | None - Repository for driver cargo response operations - Optional
+      chat_id: str | int | None - Target chat id for simple forwarding - Required when response_data provided
+      response_data: dict[str, Any] | None - Arbitrary response payload - When set, sends a formatted message and returns bool
+      user_id: int | None - Django user id - Required for idempotent DB-backed flow
+      telegram_user_id: int | None - Telegram user id - Required for DB-backed flow
+      cargo_id: str | None - Cargo id - Required for DB-backed flow
+      phone: str - Phone number - Optional
+      name: str - Driver name - Optional
+      driver_cargo_response_repo: DriverCargoResponseRepository | None - Optional repository - Optional
 
     RETURNS:
-      TelegramResponseDTO - Telegram response DTO - Never None
+      bool | dict[str, Any] - bool for simple forwarding, dict with response_id/status for DB-backed flow
 
     RAISES:
-      ValidationError: If cargo_id missing or user not allowed (no subscription)
+      ValidationError: If DB-backed flow inputs invalid or payment_required
 
     GUARANTEES:
-      - Prevents duplicate responses per (user_id, cargo_id)
-      - Creates DB record before sending to Telegram
-      - Logs to audit
+      - Simple forwarding never raises (returns False on failures)
+      - DB-backed flow is idempotent per (user_id, cargo_id)
+      - DB-backed flow writes audit log on success
     """
     @staticmethod
     @transaction.atomic
     def handle_response(
         *,
-        user_id: int,
-        telegram_user_id: int,
-        cargo_id: str,
-        phone: str,
-        name: str,
+        chat_id: str | int | None = None,
+        response_data: dict[str, Any] | None = None,
+        user_id: int | None = None,
+        telegram_user_id: int | None = None,
+        cargo_id: str | None = None,
+        phone: str = "",
+        name: str = "",
         driver_cargo_response_repo: DriverCargoResponseRepository | None = None,
-    ) -> TelegramResponseDTO:
+    ) -> bool | dict[str, Any]:
         """
-        Enforce subscription access, then create-or-reuse response record and send a bot message.
+        Either send a formatted telegram message or run the DB-backed driver response flow.
         """
+        if response_data is not None:
+            target_chat_id = chat_id
+            if target_chat_id is None:
+                return False
+
+            data = response_data or {}
+            cargo = str(data.get("cargo_id") or "").strip()
+            phone_val = str(data.get("phone") or "").strip()
+            name_val = str(data.get("name") or "").strip()
+
+            lines = ["Driver response"]
+            if cargo:
+                lines.append(f"Cargo ID: {cargo}")
+            if phone_val:
+                lines.append(f"Phone: {phone_val}")
+            if name_val:
+                lines.append(f"Name: {name_val}")
+            if len(lines) == 1:
+                lines.append("No details provided")
+
+            text = "\n".join(lines)
+            return TelegramBotService.send_message(chat_id=target_chat_id, text=text)
+
+        if user_id is None or telegram_user_id is None:
+            raise ValidationError("user_id and telegram_user_id are required")
         cargo_id = str(cargo_id or "").strip()
         if not cargo_id:
             raise ValidationError("cargo_id is required")
 
-        if not SubscriptionService.is_access_allowed(user_id=user_id, feature_key="respond_to_cargo"):
+        if not SubscriptionService.is_access_allowed(user_id=int(user_id), feature_key="respond_to_cargo"):
             raise ValidationError("payment_required")
 
-        # Use repository if provided, otherwise direct ORM access for backward compatibility
         if driver_cargo_response_repo is not None:
-            from asgiref.sync import sync_to_async
-            existing_response = sync_to_async(driver_cargo_response_repo.get_by_user_and_cargo)(
-                user_id=int(user_id), cargo_id=cargo_id
-            )
-            if existing_response:
-                response = existing_response
+            existing = driver_cargo_response_repo.get_by_user_and_cargo(user_id=int(user_id), cargo_id=cargo_id)
+            if existing is not None:
+                response = existing
                 created = False
             else:
                 response = DriverCargoResponse(
@@ -276,19 +299,10 @@ class TelegramBotService:
             )
 
         if not created and response.status in {"sent", "pending"}:
-            return TelegramResponseDTO(
-                message_id=None,
-                chat_id=telegram_user_id,
-                text=f"Статус по грузу {cargo_id}: {response.status}",
-                parse_mode=None,
-                reply_markup=None,
-                success=True,
-                error_message=None,
-                created_at=datetime.utcnow(),
-            )
+            return {"status": response.status, "response_id": str(response.id)}
 
-        chat_id = int(getattr(settings, "TELEGRAM_RESPONSES_CHAT_ID", 0) or 0)
-        if chat_id <= 0:
+        admin_chat_id = _get_telegram_responses_chat_id()
+        if not admin_chat_id:
             raise ValidationError("TELEGRAM_RESPONSES_CHAT_ID is not configured")
 
         text = "\n".join(
@@ -300,33 +314,39 @@ class TelegramBotService:
                 f"Telegram ID: {telegram_user_id}",
             ]
         )
-        telegram_resp = TelegramBotService.send_message(chat_id=chat_id, text=text)
-        msg_id = int((telegram_resp.get("result") or {}).get("message_id") or 0) or None
+
+        token = _get_telegram_bot_token()
+        if not token:
+            raise ValidationError("telegram_bot_token is not configured")
+
+        payload: dict[str, Any] = {"chat_id": admin_chat_id, "text": text}
+        try:
+            data = _send_message_raw(token, payload)
+        except requests.RequestException as exc:
+            raise ValidationError(f"Telegram request failed: {exc}") from exc
+        except ValueError as exc:
+            raise ValidationError("Telegram returned invalid JSON") from exc
+
+        if not data:
+            raise ValidationError("Telegram API error")
+
+        raw_message_id = (data.get("result") or {}).get("message_id")
+        message_id = int(raw_message_id) if raw_message_id is not None else None
 
         response.phone = phone
         response.name = name
         response.status = "sent"
-        response.telegram_message_id = msg_id
+        response.telegram_message_id = message_id
         response.save(update_fields=["phone", "name", "status", "telegram_message_id", "updated_at"])
 
         AuditService.log(
-            user_id=user_id,
+            user_id=int(user_id),
             action_type="telegram_bot",
             action="Driver response sent",
             target_id=str(response.id),
-            details={"cargo_id": cargo_id, "telegram_message_id": msg_id},
+            details={"cargo_id": cargo_id, "telegram_message_id": message_id},
         )
 
-        TelegramBotService.send_status(driver_id=telegram_user_id, cargo_id=cargo_id, status="sent")
-
-        return TelegramResponseDTO(
-            message_id=None,
-            chat_id=telegram_user_id,
-            text=f"Статус по грузу {cargo_id}: sent",
-            parse_mode=None,
-            reply_markup=None,
-            success=True,
-            error_message=None,
-            created_at=datetime.utcnow(),
-        )
+        TelegramBotService.send_status(driver_id=int(telegram_user_id), cargo_id=cargo_id, status="sent")
+        return {"status": "sent", "response_id": str(response.id)}
 

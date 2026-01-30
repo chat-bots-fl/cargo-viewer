@@ -9,6 +9,7 @@ from apps.admin_panel import views as admin_panel_views
 from apps.auth import views as auth_views
 from apps.cargos import views as cargo_views
 from apps.core.health_views import health_check, readiness_check, liveness_check
+from apps.core.openapi_views import openapi_schema, swagger_ui, redoc_ui
 from apps.filtering import views as filtering_views
 from apps.integrations import views as integrations_views
 from apps.payments import views as payments_views
@@ -151,6 +152,9 @@ urlpatterns = [
     ),
     path("admin/", admin.site.urls),
     path("", cargo_views.webapp_home, name="webapp_home"),
+    path("auth/telegram/", auth_views.telegram_auth, name="telegram_auth_root"),
+    path("payments/create/", payments_views.create_payment, name="create_payment_root"),
+    path("telegram/handle-response/", telegram_views.handle_response, name="telegram_handle_response_root"),
     # Health checks
     path("health/", health_check, name="health_check"),
     path("health/ready/", readiness_check, name="health_ready"),
@@ -184,15 +188,7 @@ urlpatterns += [
     path("api/payments/create", payments_views.create_payment, name="create_payment"),
     path("api/payments/webhook", payments_views.yookassa_webhook, name="yookassa_webhook"),
     path("api/promocodes/apply", promocodes_views.apply_promocode, name="apply_promocode"),
+    path("api/schema/", openapi_schema, name="schema"),
+    path("api/docs/", swagger_ui, name="swagger-ui"),
+    path("api/redoc/", redoc_ui, name="redoc"),
 ]
-
-# OpenAPI/Swagger documentation (conditional based on OPENAPI_ENABLED)
-if getattr(settings, "OPENAPI_ENABLED", True):
-    from drf_spectacular.views import SpectacularAPIView, SpectacularRedocView, SpectacularSwaggerView
-    
-    urlpatterns += [
-        # OpenAPI schema endpoints
-        path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
-        path("api/docs/", SpectacularSwaggerView.as_view(url_name="schema"), name="swagger-ui"),
-        path("api/redoc/", SpectacularRedocView.as_view(url_name="schema"), name="redoc"),
-    ]

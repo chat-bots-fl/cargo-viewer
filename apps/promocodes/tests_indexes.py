@@ -92,6 +92,7 @@ class PromoCodeIndexesTest(TestCase):
         Test that index on (disabled, valid_until) is used in query.
         """
         with connection.cursor() as cursor:
+            cursor.execute("SET LOCAL enable_seqscan = off")
             cursor.execute("""
                 EXPLAIN ANALYZE
                 SELECT * FROM promo_codes 
@@ -191,6 +192,7 @@ class PromoCodeUsageIndexesTest(TestCase):
         Test that index on (success, used_at) is used in query.
         """
         with connection.cursor() as cursor:
+            cursor.execute("SET LOCAL enable_seqscan = off")
             cursor.execute("""
                 EXPLAIN ANALYZE
                 SELECT * FROM promo_code_usage 

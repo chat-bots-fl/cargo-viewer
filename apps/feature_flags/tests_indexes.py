@@ -58,6 +58,7 @@ class SystemSettingIndexesTest(TestCase):
         Test that index on (is_secret, created_at) is used in query.
         """
         with connection.cursor() as cursor:
+            cursor.execute("SET LOCAL enable_seqscan = off;")
             cursor.execute("""
                 EXPLAIN ANALYZE
                 SELECT * FROM system_settings 
@@ -107,6 +108,7 @@ class FeatureFlagIndexesTest(TestCase):
         Test that index on (enabled, created_at) is used in query.
         """
         with connection.cursor() as cursor:
+            cursor.execute("SET LOCAL enable_seqscan = off;")
             cursor.execute("""
                 EXPLAIN ANALYZE
                 SELECT * FROM feature_flags 

@@ -98,6 +98,7 @@ class DriverCargoResponseIndexesTest(TestCase):
         Test that index on (user, created_at) is used in query.
         """
         with connection.cursor() as cursor:
+            cursor.execute("SET LOCAL enable_seqscan = off")
             cursor.execute("""
                 EXPLAIN ANALYZE
                 SELECT * FROM driver_cargo_responses 
@@ -115,6 +116,7 @@ class DriverCargoResponseIndexesTest(TestCase):
         Test that index on (status, created_at) is used in query.
         """
         with connection.cursor() as cursor:
+            cursor.execute("SET LOCAL enable_seqscan = off")
             cursor.execute("""
                 EXPLAIN ANALYZE
                 SELECT * FROM driver_cargo_responses 

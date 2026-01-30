@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from typing import Any, Generic, List, Optional, Type, TypeVar
 
-from asgiref.sync import sync_to_async
 from django.contrib.auth import get_user_model
 from django.db import models
 
@@ -63,7 +62,7 @@ class BaseRepository(Generic[T]):
       - Returns None instead of raising DoesNotExist
       - Applies select_related and prefetch_related if provided
     """
-    async def get(
+    def get(
         self,
         pk: Any,
         select_related: Optional[List[str]] = None,
@@ -79,7 +78,7 @@ class BaseRepository(Generic[T]):
         if prefetch_related:
             queryset = queryset.prefetch_related(*prefetch_related)
         
-        return await sync_to_async(queryset.filter(pk=pk).first)()
+        return queryset.filter(pk=pk).first()
 
     """
     GOAL: Retrieve a single instance by filter criteria.
@@ -97,11 +96,11 @@ class BaseRepository(Generic[T]):
       - Returns None instead of raising DoesNotExist
       - Returns first matching record only
     """
-    async def get_by(self, **kwargs: Any) -> Optional[T]:
+    def get_by(self, **kwargs: Any) -> Optional[T]:
         """
         Fetch single record matching filter criteria.
         """
-        return await sync_to_async(self.model.objects.filter(**kwargs).first)()
+        return self.model.objects.filter(**kwargs).first()
 
     """
     GOAL: Retrieve multiple instances by filter criteria.
@@ -119,11 +118,11 @@ class BaseRepository(Generic[T]):
       - Returns empty list instead of raising DoesNotExist
       - Results ordered by model's default ordering
     """
-    async def filter(self, **kwargs: Any) -> List[T]:
+    def filter(self, **kwargs: Any) -> List[T]:
         """
         Fetch all records matching filter criteria.
         """
-        return list(await sync_to_async(list)(self.model.objects.filter(**kwargs)))
+        return list(self.model.objects.filter(**kwargs))
 
     """
     GOAL: Retrieve all instances from the model.
@@ -142,7 +141,7 @@ class BaseRepository(Generic[T]):
       - Returns empty list instead of raising DoesNotExist
       - Applies eager loading if provided
     """
-    async def all(
+    def all(
         self,
         select_related: Optional[List[str]] = None,
         prefetch_related: Optional[List[str]] = None,
@@ -157,7 +156,7 @@ class BaseRepository(Generic[T]):
         if prefetch_related:
             queryset = queryset.prefetch_related(*prefetch_related)
         
-        return list(await sync_to_async(list)(queryset))
+        return list(queryset)
 
     """
     GOAL: Create a new instance with given attributes.
@@ -176,12 +175,12 @@ class BaseRepository(Generic[T]):
       - Instance is saved to database
       - Returns instance with auto-generated fields populated
     """
-    async def create(self, **kwargs: Any) -> T:
+    def create(self, **kwargs: Any) -> T:
         """
         Create and save new record.
         """
         instance = self.model(**kwargs)
-        await sync_to_async(instance.save)()
+        instance.save()
         return instance
 
     """
@@ -201,13 +200,13 @@ class BaseRepository(Generic[T]):
       - Only specified fields are updated
       - Changes are persisted to database
     """
-    async def update(self, instance: T, **kwargs: Any) -> T:
+    def update(self, instance: T, **kwargs: Any) -> T:
         """
         Update specific fields of existing record.
         """
         for field, value in kwargs.items():
             setattr(instance, field, value)
-        await sync_to_async(instance.save)()
+        instance.save()
         return instance
 
     """
@@ -226,11 +225,11 @@ class BaseRepository(Generic[T]):
       - Instance is removed from database
       - Cascade deletes are applied per model configuration
     """
-    async def delete(self, instance: T) -> None:
+    def delete(self, instance: T) -> None:
         """
         Delete record from database.
         """
-        await sync_to_async(instance.delete)()
+        instance.delete()
 
     """
     GOAL: Count instances matching filter criteria.
@@ -247,11 +246,11 @@ class BaseRepository(Generic[T]):
     GUARANTEES:
       - Returns 0 if no matches found
     """
-    async def count(self, **kwargs: Any) -> int:
+    def count(self, **kwargs: Any) -> int:
         """
         Count records matching filter criteria.
         """
-        return await sync_to_async(self.model.objects.filter(**kwargs).count)()
+        return self.model.objects.filter(**kwargs).count()
 
     """
     GOAL: Check if any instance matches filter criteria.
@@ -268,11 +267,11 @@ class BaseRepository(Generic[T]):
     GUARANTEES:
       - More efficient than count() for existence checks
     """
-    async def exists(self, **kwargs: Any) -> bool:
+    def exists(self, **kwargs: Any) -> bool:
         """
         Check if any record matches filter criteria.
         """
-        return await sync_to_async(self.model.objects.filter(**kwargs).exists)()
+        return self.model.objects.filter(**kwargs).exists()
 
 
 # ============================================================================
@@ -303,11 +302,11 @@ class UserRepository(BaseRepository[User]):
     GUARANTEES:
       - Case-sensitive username match
     """
-    async def get_by_username(self, username: str) -> Optional[User]:
+    def get_by_username(self, username: str) -> Optional[User]:
         """
         Fetch user by username field.
         """
-        return await self.get_by(username=username)
+        return self.get_by(username=username)
 
     """
     GOAL: Find user by email.
@@ -324,11 +323,11 @@ class UserRepository(BaseRepository[User]):
     GUARANTEES:
       - Case-insensitive email match
     """
-    async def get_by_email(self, email: str) -> Optional[User]:
+    def get_by_email(self, email: str) -> Optional[User]:
         """
         Fetch user by email field.
         """
-        return await self.get_by(email__iexact=email)
+        return self.get_by(email__iexact=email)
 
 
 class DriverProfileRepository(BaseRepository[DriverProfile]):
@@ -354,13 +353,11 @@ class DriverProfileRepository(BaseRepository[DriverProfile]):
     GUARANTEES:
       - Exact match on telegram_user_id
     """
-    async def get_by_telegram_user_id(
-        self, telegram_user_id: int
-    ) -> Optional[DriverProfile]:
+    def get_by_telegram_user_id(self, telegram_user_id: int) -> Optional[DriverProfile]:
         """
         Fetch driver profile by Telegram user ID.
         """
-        return await self.get_by(telegram_user_id=telegram_user_id)
+        return self.get_by(telegram_user_id=telegram_user_id)
 
     """
     GOAL: Find driver profile by user ID with user data.
@@ -377,14 +374,12 @@ class DriverProfileRepository(BaseRepository[DriverProfile]):
     GUARANTEES:
       - Includes related user object
     """
-    async def get_by_user_with_relations(
-        self, user_id: int
-    ) -> Optional[DriverProfile]:
+    def get_by_user_with_relations(self, user_id: int) -> Optional[DriverProfile]:
         """
         Fetch driver profile with related user.
         """
         queryset = self.model.objects.select_related("user").filter(user_id=user_id)
-        return await sync_to_async(queryset.first)()
+        return queryset.first()
 
 
 class TelegramSessionRepository(BaseRepository[TelegramSession]):
@@ -411,16 +406,14 @@ class TelegramSessionRepository(BaseRepository[TelegramSession]):
       - Returns only non-revoked sessions
       - Returns most recent session if multiple exist
     """
-    async def get_active_session(
-        self, user_id: int
-    ) -> Optional[TelegramSession]:
+    def get_active_session(self, user_id: int) -> Optional[TelegramSession]:
         """
         Fetch active session for user.
         """
         queryset = self.model.objects.filter(
             user_id=user_id, revoked_at__isnull=True
         ).order_by("-created_at")
-        return await sync_to_async(queryset.first)()
+        return queryset.first()
 
     """
     GOAL: Find session by session ID with user data.
@@ -437,16 +430,14 @@ class TelegramSessionRepository(BaseRepository[TelegramSession]):
     GUARANTEES:
       - Includes related user object
     """
-    async def get_by_session_id_with_user(
-        self, session_id: str
-    ) -> Optional[TelegramSession]:
+    def get_by_session_id_with_user(self, session_id: str) -> Optional[TelegramSession]:
         """
         Fetch session by ID with related user.
         """
         queryset = self.model.objects.select_related("user").filter(
             session_id=session_id
         )
-        return await sync_to_async(queryset.first)()
+        return queryset.first()
 
     """
     GOAL: Revoke all active sessions for user.
@@ -464,16 +455,15 @@ class TelegramSessionRepository(BaseRepository[TelegramSession]):
       - Only active sessions are affected
       - revoked_at set to current time
     """
-    async def revoke_all_user_sessions(self, user_id: int) -> int:
+    def revoke_all_user_sessions(self, user_id: int) -> int:
         """
         Revoke all active sessions for user.
         """
         from django.utils import timezone
         
-        count = await sync_to_async(
-            self.model.objects.filter(user_id=user_id, revoked_at__isnull=True).update
-        )(revoked_at=timezone.now())
-        return count
+        return self.model.objects.filter(user_id=user_id, revoked_at__isnull=True).update(
+            revoked_at=timezone.now()
+        )
 
 
 class SubscriptionRepository(BaseRepository[Subscription]):
@@ -499,16 +489,14 @@ class SubscriptionRepository(BaseRepository[Subscription]):
     GUARANTEES:
       - Includes payment and promo_code relations
     """
-    async def get_by_user_with_relations(
-        self, user_id: int
-    ) -> Optional[Subscription]:
+    def get_by_user_with_relations(self, user_id: int) -> Optional[Subscription]:
         """
         Fetch subscription with related payment and promo code.
         """
         queryset = self.model.objects.select_related(
             "user", "payment", "promo_code"
         ).filter(user_id=user_id)
-        return await sync_to_async(queryset.first)()
+        return queryset.first()
 
     """
     GOAL: Find active (non-expired) subscriptions.
@@ -525,7 +513,7 @@ class SubscriptionRepository(BaseRepository[Subscription]):
     GUARANTEES:
       - Only returns is_active=True and not expired
     """
-    async def get_active_subscriptions(self) -> List[Subscription]:
+    def get_active_subscriptions(self) -> List[Subscription]:
         """
         Fetch all active subscriptions.
         """
@@ -534,7 +522,7 @@ class SubscriptionRepository(BaseRepository[Subscription]):
         queryset = self.model.objects.filter(
             is_active=True, expires_at__gt=timezone.now()
         )
-        return list(await sync_to_async(list)(queryset))
+        return list(queryset)
 
     """
     GOAL: Find subscription by access token.
@@ -551,11 +539,11 @@ class SubscriptionRepository(BaseRepository[Subscription]):
     GUARANTEES:
       - Exact match on access_token
     """
-    async def get_by_access_token(self, token: str) -> Optional[Subscription]:
+    def get_by_access_token(self, token: str) -> Optional[Subscription]:
         """
         Fetch subscription by access token.
         """
-        return await self.get_by(access_token=token)
+        return self.get_by(access_token=token)
 
 
 class PaymentRepository(BaseRepository[Payment]):
@@ -582,14 +570,14 @@ class PaymentRepository(BaseRepository[Payment]):
       - Includes history records for each payment
       - Ordered by created_at descending
     """
-    async def get_by_user_with_history(self, user_id: int) -> List[Payment]:
+    def get_by_user_with_history(self, user_id: int) -> List[Payment]:
         """
         Fetch payments with related history.
         """
         queryset = self.model.objects.filter(user_id=user_id).prefetch_related(
             "history"
         ).order_by("-created_at")
-        return list(await sync_to_async(list)(queryset))
+        return list(queryset)
 
     """
     GOAL: Find payment by Yukassa payment ID.
@@ -606,11 +594,11 @@ class PaymentRepository(BaseRepository[Payment]):
     GUARANTEES:
       - Exact match on yukassa_payment_id
     """
-    async def get_by_yukassa_id(self, yukassa_id: str) -> Optional[Payment]:
+    def get_by_yukassa_id(self, yukassa_id: str) -> Optional[Payment]:
         """
         Fetch payment by Yukassa payment ID.
         """
-        return await self.get_by(yukassa_payment_id=yukassa_id)
+        return self.get_by(yukassa_payment_id=yukassa_id)
 
     """
     GOAL: Find payments by status.
@@ -627,12 +615,12 @@ class PaymentRepository(BaseRepository[Payment]):
     GUARANTEES:
       - Ordered by created_at descending
     """
-    async def get_by_status(self, status: str) -> List[Payment]:
+    def get_by_status(self, status: str) -> List[Payment]:
         """
         Fetch payments by status.
         """
         queryset = self.model.objects.filter(status=status).order_by("-created_at")
-        return list(await sync_to_async(list)(queryset))
+        return list(queryset)
 
 
 class PaymentHistoryRepository(BaseRepository[PaymentHistory]):
@@ -658,14 +646,14 @@ class PaymentHistoryRepository(BaseRepository[PaymentHistory]):
     GUARANTEES:
       - Ordered by created_at descending
     """
-    async def get_by_payment(self, payment_id: str) -> List[PaymentHistory]:
+    def get_by_payment(self, payment_id: str) -> List[PaymentHistory]:
         """
         Fetch history records for payment.
         """
         queryset = self.model.objects.filter(payment_id=payment_id).order_by(
             "-created_at"
         )
-        return list(await sync_to_async(list)(queryset))
+        return list(queryset)
 
     """
     GOAL: Create a history record for payment status change.
@@ -687,7 +675,7 @@ class PaymentHistoryRepository(BaseRepository[PaymentHistory]):
       - Record is saved to database
       - created_at set to current time
     """
-    async def create_history_event(
+    def create_history_event(
         self,
         payment: Payment,
         event_type: str,
@@ -698,7 +686,7 @@ class PaymentHistoryRepository(BaseRepository[PaymentHistory]):
         """
         Create payment history event.
         """
-        return await self.create(
+        return self.create(
             payment=payment,
             event_type=event_type,
             old_status=old_status or "",
@@ -732,14 +720,14 @@ class AuditLogRepository(BaseRepository[AuditLog]):
       - Ordered by created_at descending
       - Respects limit parameter
     """
-    async def get_by_user(self, user_id: int, limit: Optional[int] = None) -> List[AuditLog]:
+    def get_by_user(self, user_id: int, limit: Optional[int] = None) -> List[AuditLog]:
         """
         Fetch audit logs for user.
         """
         queryset = self.model.objects.filter(user_id=user_id).order_by("-created_at")
         if limit:
             queryset = queryset[:limit]
-        return list(await sync_to_async(list)(queryset))
+        return list(queryset)
 
     """
     GOAL: Find audit logs by action type.
@@ -758,9 +746,7 @@ class AuditLogRepository(BaseRepository[AuditLog]):
       - Ordered by created_at descending
       - Respects limit parameter
     """
-    async def get_by_action_type(
-        self, action_type: str, limit: Optional[int] = None
-    ) -> List[AuditLog]:
+    def get_by_action_type(self, action_type: str, limit: Optional[int] = None) -> List[AuditLog]:
         """
         Fetch audit logs by action type.
         """
@@ -769,7 +755,7 @@ class AuditLogRepository(BaseRepository[AuditLog]):
         )
         if limit:
             queryset = queryset[:limit]
-        return list(await sync_to_async(list)(queryset))
+        return list(queryset)
 
     """
     GOAL: Create an audit log entry.
@@ -794,7 +780,7 @@ class AuditLogRepository(BaseRepository[AuditLog]):
       - Record is saved to database
       - created_at set to current time
     """
-    async def create_log(
+    def create_log(
         self,
         user: Optional[User],
         username: str,
@@ -808,7 +794,7 @@ class AuditLogRepository(BaseRepository[AuditLog]):
         """
         Create audit log entry.
         """
-        return await self.create(
+        return self.create(
             user=user,
             username=username,
             action_type=action_type,
@@ -843,11 +829,11 @@ class PromoCodeRepository(BaseRepository[PromoCode]):
     GUARANTEES:
       - Case-sensitive exact match
     """
-    async def get_by_code(self, code: str) -> Optional[PromoCode]:
+    def get_by_code(self, code: str) -> Optional[PromoCode]:
         """
         Fetch promo code by code string.
         """
-        return await self.get_by(code=code)
+        return self.get_by(code=code)
 
     """
     GOAL: Find active (usable) promo codes.
@@ -865,9 +851,7 @@ class PromoCodeRepository(BaseRepository[PromoCode]):
       - Only returns codes where can_use() is True
       - Filters by action if provided
     """
-    async def get_active_promo_codes(
-        self, action: Optional[str] = None
-    ) -> List[PromoCode]:
+    def get_active_promo_codes(self, action: Optional[str] = None) -> List[PromoCode]:
         """
         Fetch active promo codes.
         """
@@ -880,7 +864,7 @@ class PromoCodeRepository(BaseRepository[PromoCode]):
         )
         if action:
             queryset = queryset.filter(action=action)
-        return list(await sync_to_async(list)(queryset))
+        return list(queryset)
 
 
 class PromoCodeUsageRepository(BaseRepository[PromoCodeUsage]):
@@ -906,14 +890,14 @@ class PromoCodeUsageRepository(BaseRepository[PromoCodeUsage]):
     GUARANTEES:
       - Ordered by used_at descending
     """
-    async def get_by_promo_code(self, promo_code_id: int) -> List[PromoCodeUsage]:
+    def get_by_promo_code(self, promo_code_id: int) -> List[PromoCodeUsage]:
         """
         Fetch usage records for promo code.
         """
         queryset = self.model.objects.filter(promo_code_id=promo_code_id).order_by(
             "-used_at"
         )
-        return list(await sync_to_async(list)(queryset))
+        return list(queryset)
 
     """
     GOAL: Find usage records for a user.
@@ -930,12 +914,12 @@ class PromoCodeUsageRepository(BaseRepository[PromoCodeUsage]):
     GUARANTEES:
       - Ordered by used_at descending
     """
-    async def get_by_user(self, user_id: int) -> List[PromoCodeUsage]:
+    def get_by_user(self, user_id: int) -> List[PromoCodeUsage]:
         """
         Fetch usage records for user.
         """
         queryset = self.model.objects.filter(user_id=user_id).order_by("-used_at")
-        return list(await sync_to_async(list)(queryset))
+        return list(queryset)
 
     """
     GOAL: Check if user has already used a promo code.
@@ -953,15 +937,11 @@ class PromoCodeUsageRepository(BaseRepository[PromoCodeUsage]):
     GUARANTEES:
       - Only checks successful usages (success=True)
     """
-    async def user_has_used_code(
-        self, promo_code_id: int, user_id: int
-    ) -> bool:
+    def user_has_used_code(self, promo_code_id: int, user_id: int) -> bool:
         """
         Check if user has used promo code.
         """
-        return await self.exists(
-            promo_code_id=promo_code_id, user_id=user_id, success=True
-        )
+        return self.exists(promo_code_id=promo_code_id, user_id=user_id, success=True)
 
 
 class DriverCargoResponseRepository(BaseRepository[DriverCargoResponse]):
@@ -988,13 +968,11 @@ class DriverCargoResponseRepository(BaseRepository[DriverCargoResponse]):
     GUARANTEES:
       - Unique constraint ensures at most one result
     """
-    async def get_by_user_and_cargo(
-        self, user_id: int, cargo_id: str
-    ) -> Optional[DriverCargoResponse]:
+    def get_by_user_and_cargo(self, user_id: int, cargo_id: str) -> Optional[DriverCargoResponse]:
         """
         Fetch response by user and cargo ID.
         """
-        return await self.get_by(user_id=user_id, cargo_id=cargo_id)
+        return self.get_by(user_id=user_id, cargo_id=cargo_id)
 
     """
     GOAL: Find all responses for a cargo.
@@ -1011,12 +989,12 @@ class DriverCargoResponseRepository(BaseRepository[DriverCargoResponse]):
     GUARANTEES:
       - Ordered by created_at descending
     """
-    async def get_by_cargo(self, cargo_id: str) -> List[DriverCargoResponse]:
+    def get_by_cargo(self, cargo_id: str) -> List[DriverCargoResponse]:
         """
         Fetch all responses for cargo.
         """
         queryset = self.model.objects.filter(cargo_id=cargo_id).order_by("-created_at")
-        return list(await sync_to_async(list)(queryset))
+        return list(queryset)
 
     """
     GOAL: Find responses by status.
@@ -1033,12 +1011,12 @@ class DriverCargoResponseRepository(BaseRepository[DriverCargoResponse]):
     GUARANTEES:
       - Ordered by created_at descending
     """
-    async def get_by_status(self, status: str) -> List[DriverCargoResponse]:
+    def get_by_status(self, status: str) -> List[DriverCargoResponse]:
         """
         Fetch responses by status.
         """
         queryset = self.model.objects.filter(status=status).order_by("-created_at")
-        return list(await sync_to_async(list)(queryset))
+        return list(queryset)
 
 
 class SystemSettingRepository(BaseRepository[SystemSetting]):
@@ -1064,11 +1042,11 @@ class SystemSettingRepository(BaseRepository[SystemSetting]):
     GUARANTEES:
       - Case-sensitive exact match
     """
-    async def get_by_key(self, key: str) -> Optional[SystemSetting]:
+    def get_by_key(self, key: str) -> Optional[SystemSetting]:
         """
         Fetch setting by key.
         """
-        return await self.get_by(key=key)
+        return self.get_by(key=key)
 
     """
     GOAL: Find secret settings.
@@ -1085,11 +1063,11 @@ class SystemSettingRepository(BaseRepository[SystemSetting]):
     GUARANTEES:
       - Only returns settings where is_secret=True
     """
-    async def get_secret_settings(self) -> List[SystemSetting]:
+    def get_secret_settings(self) -> List[SystemSetting]:
         """
         Fetch all secret settings.
         """
-        return await self.filter(is_secret=True)
+        return self.filter(is_secret=True)
 
 
 class FeatureFlagRepository(BaseRepository[FeatureFlag]):
@@ -1115,11 +1093,11 @@ class FeatureFlagRepository(BaseRepository[FeatureFlag]):
     GUARANTEES:
       - Case-sensitive exact match
     """
-    async def get_by_key(self, key: str) -> Optional[FeatureFlag]:
+    def get_by_key(self, key: str) -> Optional[FeatureFlag]:
         """
         Fetch feature flag by key.
         """
-        return await self.get_by(key=key)
+        return self.get_by(key=key)
 
     """
     GOAL: Find enabled feature flags.
@@ -1136,11 +1114,11 @@ class FeatureFlagRepository(BaseRepository[FeatureFlag]):
     GUARANTEES:
       - Only returns flags where enabled=True
     """
-    async def get_enabled_flags(self) -> List[FeatureFlag]:
+    def get_enabled_flags(self) -> List[FeatureFlag]:
         """
         Fetch all enabled feature flags.
         """
-        return await self.filter(enabled=True)
+        return self.filter(enabled=True)
 
     """
     GOAL: Check if feature flag is enabled.
@@ -1157,9 +1135,9 @@ class FeatureFlagRepository(BaseRepository[FeatureFlag]):
     GUARANTEES:
       - Returns False if flag doesn't exist
     """
-    async def is_enabled(self, key: str) -> bool:
+    def is_enabled(self, key: str) -> bool:
         """
         Check if feature flag is enabled.
         """
-        flag = await self.get_by_key(key)
+        flag = self.get_by_key(key)
         return flag.enabled if flag else False

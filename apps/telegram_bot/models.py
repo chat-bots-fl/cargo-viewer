@@ -30,11 +30,10 @@ class DriverCargoResponse(models.Model):
             models.UniqueConstraint(fields=["user", "cargo_id"], name="uniq_driver_cargo_response"),
         ]
         indexes = [
-            models.Index(fields=["cargo_id", "created_at"]),
-            models.Index(fields=["user", "created_at"]),
-            models.Index(fields=["status", "created_at"]),
+            models.Index(fields=["cargo_id", "created_at"], name="dcr_cargo_id_created_at"),
+            models.Index(fields=["user", "created_at"], name="dcr_user_created_at"),
+            models.Index(fields=["status", "created_at"], name="dcr_status_created_at"),
         ]
 
     def __str__(self) -> str:
         return f"DriverCargoResponse(user_id={self.user_id}, cargo_id={self.cargo_id}, status={self.status})"
-

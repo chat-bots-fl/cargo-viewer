@@ -35,8 +35,8 @@ class PromoCode(models.Model):
     class Meta:
         db_table = "promo_codes"
         indexes = [
-            models.Index(fields=["action", "valid_until"]),
-            models.Index(fields=["disabled", "valid_until"]),
+            models.Index(fields=["action", "valid_until"], name="pc_action_valid_until"),
+            models.Index(fields=["disabled", "valid_until"], name="pc_disabled_valid_until"),
         ]
 
     def __str__(self) -> str:
@@ -120,9 +120,9 @@ class PromoCodeUsage(models.Model):
     class Meta:
         db_table = "promo_code_usage"
         indexes = [
-            models.Index(fields=["promo_code", "used_at"]),
-            models.Index(fields=["user", "used_at"]),
-            models.Index(fields=["success", "used_at"]),
+            models.Index(fields=["promo_code", "used_at"], name="pcu_promo_code_used_at"),
+            models.Index(fields=["user", "used_at"], name="pcu_user_used_at"),
+            models.Index(fields=["success", "used_at"], name="pcu_success_used_at"),
         ]
 
     def __str__(self) -> str:

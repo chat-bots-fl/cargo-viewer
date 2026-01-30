@@ -478,7 +478,7 @@ def cache_diagnostics_view(request: HttpRequest) -> HttpResponse:
     include_revoked = str(request.GET.get("include_revoked") or "").strip() in {"1", "true", "yes", "on"}
     use_django_admin_urls = str(request.path or "").startswith("/admin/")
 
-    qs = TelegramSession.objects.select_related("user", "user__driverprofile").all().order_by("-created_at")
+    qs = TelegramSession.objects.select_related("user", "user__driver_profile").all().order_by("-created_at")
     if not include_revoked:
         qs = qs.filter(revoked_at__isnull=True)
 
@@ -486,7 +486,7 @@ def cache_diagnostics_view(request: HttpRequest) -> HttpResponse:
         q_filters = Q(user__username__icontains=query) | Q(user__email__icontains=query)
         if query.isdigit():
             q_int = int(query)
-            q_filters |= Q(user_id=q_int) | Q(user__driverprofile__telegram_user_id=q_int)
+            q_filters |= Q(user_id=q_int) | Q(user__driver_profile__telegram_user_id=q_int)
         qs = qs.filter(q_filters)
 
     sessions = qs[:200]
@@ -495,7 +495,7 @@ def cache_diagnostics_view(request: HttpRequest) -> HttpResponse:
         telegram_user_id: int | None = None
         telegram_username: str | None = None
         try:
-            dp = session.user.driverprofile  # type: ignore[attr-defined]
+            dp = session.user.driver_profile  # type: ignore[attr-defined]
             telegram_user_id = int(getattr(dp, "telegram_user_id", 0)) or None
             telegram_username = str(getattr(dp, "telegram_username", "") or "").strip() or None
         except Exception:
@@ -577,7 +577,7 @@ def cache_diagnostics_session_view(request: HttpRequest, session_id: str) -> Htt
     session_id = str(session_id).strip()
     use_django_admin_urls = str(request.path or "").startswith("/admin/")
     session = (
-        TelegramSession.objects.select_related("user", "user__driverprofile")
+        TelegramSession.objects.select_related("user", "user__driver_profile")
         .filter(session_id=session_id)
         .order_by("-created_at")
         .first()
@@ -588,7 +588,7 @@ def cache_diagnostics_session_view(request: HttpRequest, session_id: str) -> Htt
     telegram_user_id: int | None = None
     telegram_username: str | None = None
     try:
-        dp = session.user.driverprofile  # type: ignore[attr-defined]
+        dp = session.user.driver_profile  # type: ignore[attr-defined]
         telegram_user_id = int(getattr(dp, "telegram_user_id", 0)) or None
         telegram_username = str(getattr(dp, "telegram_username", "") or "").strip() or None
     except Exception:

@@ -589,6 +589,6 @@ class TestVersioningDisabled(TestCase):
           - Default version always returned when disabled
         """
         factory = RequestFactory()
-        request = self.factory.get("/api/v1/cargos/")
+        request = factory.get("/api/v1/cargos/")
         version = get_api_version(request)
         self.assertEqual(version, "v3")

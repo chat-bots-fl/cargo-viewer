@@ -7,9 +7,10 @@ from django.db import models
 
 
 class DriverProfile(models.Model):
-    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="driverprofile")
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="driver_profile")
     telegram_user_id = models.BigIntegerField(unique=True, db_index=True)
     telegram_username = models.CharField(max_length=255, blank=True)
+    company_name = models.CharField(max_length=255, blank=True, default="")
 
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -42,4 +43,3 @@ class TelegramSession(models.Model):
 
     def __str__(self) -> str:
         return f"TelegramSession(user_id={self.user_id}, session_id={self.session_id})"
-

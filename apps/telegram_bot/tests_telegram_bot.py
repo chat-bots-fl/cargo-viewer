@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from unittest.mock import Mock, patch
 from django.test import TestCase
+from django.core.cache import cache
 from requests.exceptions import HTTPError
 
 from apps.telegram_bot.services import TelegramBotService

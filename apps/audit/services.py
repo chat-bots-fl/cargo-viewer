@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any
 
@@ -17,6 +18,36 @@ class AuditService:
     """
     DB-backed audit logger for payments, subscriptions, promos, and admin actions.
     """
+
+    """
+    GOAL: Make audit details JSON-serializable for safe storage in JSONField.
+
+    PARAMETERS:
+      details: dict[str, Any] | None - Audit details payload - Optional
+
+    RETURNS:
+      dict[str, Any] - JSON-safe details dictionary - Never None
+
+    RAISES:
+      None
+
+    GUARANTEES:
+      - Returns a dict (empty if input is None/empty)
+      - Replaces non-serializable values with strings
+      - Never raises
+    """
+    @staticmethod
+    def _normalize_details(details: dict[str, Any] | None) -> dict[str, Any]:
+        """
+        Serialize+deserialize with a string fallback to coerce unknown values.
+        """
+        if not details:
+            return {}
+
+        try:
+            return json.loads(json.dumps(details, ensure_ascii=False, default=str))
+        except Exception:
+            return {"_raw": str(details)}
 
     """
     GOAL: Record an auditable event in the database (best-effort).
@@ -44,7 +75,7 @@ class AuditService:
     @staticmethod
     def log(
         *,
-        user_id: int | None,
+        user_id: int | None = None,
         action_type: str,
         action: str,
         target_id: str | None = None,
@@ -59,17 +90,19 @@ class AuditService:
         """
         try:
             user, username = get_user_for_audit(int(user_id)) if user_id else (None, "")
+            normalized_details = AuditService._normalize_details(details)
 
             # Use repository if provided, otherwise direct ORM access for backward compatibility
             if audit_log_repo is not None:
-                from asgiref.sync import sync_to_async
-                sync_to_async(audit_log_repo.create_log)(
+                from asgiref.sync import async_to_sync
+
+                async_to_sync(audit_log_repo.create_log)(
                     user=user,
                     username=username,
                     action_type=str(action_type or "").strip(),
                     action=str(action or "").strip(),
                     target_id=str(target_id or ""),
-                    details=details or {},
+                    details=normalized_details,
                     ip_address=ip_address,
                     user_agent=user_agent or "",
                 )
@@ -80,7 +113,7 @@ class AuditService:
                     action_type=str(action_type or "").strip(),
                     action=str(action or "").strip(),
                     target_id=str(target_id or ""),
-                    details=details or {},
+                    details=normalized_details,
                     ip_address=ip_address,
                     user_agent=user_agent or "",
                 )

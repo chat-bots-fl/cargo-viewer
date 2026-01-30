@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import json
 import logging
 from functools import wraps
-from typing import Callable, TypeVar
+from typing import Any, Callable, TypeVar
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -13,6 +14,35 @@ from apps.auth.services import is_admin_user, has_admin_subscription
 logger = logging.getLogger("admin_auth")
 
 T = TypeVar("T", bound=Callable[..., HttpResponse])
+
+"""
+GOAL: Create a JsonResponse that also provides a .json() helper for tests.
+
+PARAMETERS:
+  payload: dict[str, Any] - JSON-serializable response payload - Must be a dict
+  status: int - HTTP status code - Must be positive
+
+RETURNS:
+  JsonResponse - Django JsonResponse with added .json() method - Never None
+
+RAISES:
+  TypeError: If payload is not JSON serializable
+
+GUARANTEES:
+  - Returned response is a valid Django JsonResponse
+  - Returned response supports response.json() in RequestFactory-based tests
+"""
+def _json_response(payload: dict[str, Any], status: int) -> JsonResponse:
+    """
+    Build JsonResponse and attach a small json() helper for parity with Django test client responses.
+    """
+    response = JsonResponse(payload, status=status)
+
+    def _json() -> Any:
+        return json.loads(response.content.decode(response.charset))
+
+    setattr(response, "json", _json)
+    return response
 
 
 """
@@ -40,20 +70,10 @@ def require_driver(view: T) -> T:
     def _wrapped(request: HttpRequest, *args, **kwargs):
         ctx = getattr(request, "auth_context", None)
         
-        # Detailed logging for debugging
-        logger.info(f"require_driver - Checking auth for {request.path}")
-        logger.info(f"require_driver - auth_context exists: {ctx is not None}")
-        if ctx:
-            logger.info(f"require_driver - driver_data exists: {ctx.driver_data is not None}")
-            if ctx.driver_data:
-                logger.info(f"require_driver - driver_data: {ctx.driver_data}")
-        logger.info(f"require_driver - request.user: {getattr(request, 'user', 'NO USER')}")
-        
         if not ctx or not ctx.driver_data:
-            logger.warning(f"require_driver - AUTH FAILED! ctx={ctx}, driver_data={getattr(ctx, 'driver_data', 'N/A')}")
-            return JsonResponse({"error": "unauthorized"}, status=401)
-        
-        logger.info(f"require_driver - AUTH PASSED, executing view")
+            logger.warning("Driver access denied: missing auth_context for %s from %s", request.path, _get_client_ip(request))
+            return _json_response({"error": "unauthorized"}, status=401)
+
         return view(request, *args, **kwargs)
 
     return _wrapped  # type: ignore[return-value]
@@ -97,7 +117,7 @@ def require_admin(view: T | None = None, *, require_subscription: bool | None = 
                     request.path,
                     _get_client_ip(request),
                 )
-                return JsonResponse({"error": "forbidden", "reason": "unauthenticated"}, status=403)
+                return _json_response({"forbidden": True, "reason": "unauthenticated"}, status=403)
             
             # Check admin privileges
             if not is_admin_user(user):
@@ -108,7 +128,7 @@ def require_admin(view: T | None = None, *, require_subscription: bool | None = 
                     request.path,
                     _get_client_ip(request),
                 )
-                return JsonResponse({"error": "forbidden", "reason": "not_admin"}, status=403)
+                return _json_response({"forbidden": True, "reason": "not_admin"}, status=403)
             
             # Check subscription if required
             check_subscription = (
@@ -127,7 +147,7 @@ def require_admin(view: T | None = None, *, require_subscription: bool | None = 
                         request.path,
                         _get_client_ip(request),
                     )
-                    return JsonResponse({"error": "forbidden", "reason": "no_admin_subscription"}, status=403)
+                    return _json_response({"forbidden": True, "reason": "no_admin_subscription"}, status=403)
             
             # All checks passed, log access and execute view
             logger.info(

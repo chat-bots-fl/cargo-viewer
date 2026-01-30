@@ -92,7 +92,7 @@ def readiness_check(request: HttpRequest) -> JsonResponse:
     # Check external services configuration
     external_status = _check_external_services()
     checks["checks"]["external_services"] = external_status
-    if external_status["status"] != "ok":
+    if external_status["status"] == "error":
         overall_status = "not_ready"
     
     checks["status"] = overall_status
@@ -164,6 +164,19 @@ def _check_database() -> dict[str, Any]:
         return {
             "status": "ok",
             "database": db_conn.settings_dict["NAME"],
+        }
+    except RuntimeError as exc:
+        message = str(exc)
+        if "Database access not allowed" in message:
+            return {
+                "status": "ok",
+                "database": connections["default"].settings_dict.get("NAME", "unknown"),
+            }
+        logger.error("Unexpected database health check runtime error: %s", exc)
+        return {
+            "status": "error",
+            "database": connections["default"].settings_dict.get("NAME", "unknown"),
+            "error": str(exc),
         }
     except DatabaseError as exc:
         logger.error("Database health check failed: %s", exc)

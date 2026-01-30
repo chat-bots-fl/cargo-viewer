@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import logging
+from typing import Any
 
 from django.contrib.auth import get_user_model
 from django.conf import settings
@@ -34,6 +36,36 @@ except ImportError:
         OBJECT = dict
 
 User = get_user_model()
+logger = logging.getLogger("telegram_auth")
+
+"""
+GOAL: Create a JsonResponse that also provides a .json() helper for tests.
+
+PARAMETERS:
+  payload: dict[str, Any] - JSON-serializable response payload - Must be a dict
+  status: int - HTTP status code - Must be positive
+
+RETURNS:
+  JsonResponse - Django JsonResponse with added .json() method - Never None
+
+RAISES:
+  TypeError: If payload is not JSON serializable
+
+GUARANTEES:
+  - Returned response is a valid Django JsonResponse
+  - Returned response supports response.json() in RequestFactory-based tests
+"""
+def _json_response(payload: dict[str, Any], status: int) -> JsonResponse:
+    """
+    Build JsonResponse and attach a small json() helper for parity with Django test client responses.
+    """
+    response = JsonResponse(payload, status=status)
+
+    def _json() -> Any:
+        return json.loads(response.content.decode(response.charset))
+
+    setattr(response, "json", _json)
+    return response
 
 
 """
@@ -112,39 +144,27 @@ def telegram_auth(request):
     """
     Validate initData, upsert Django user + DriverProfile, then issue a JWT token bound to Redis session id.
     """
-    import logging
-    logger = logging.getLogger("telegram_auth")
-    
+
     if request.method != "POST":
-        return JsonResponse({"error": "method_not_allowed"}, status=405)
+        return _json_response({"error": "method_not_allowed"}, status=405)
 
     try:
         payload = json.loads(request.body.decode("utf-8") or "{}")
     except json.JSONDecodeError:
-        return JsonResponse({"error": "invalid_json"}, status=400)
-
-    logger.info(f"Received auth request payload keys: {list(payload.keys())}")
-    if 'init_data' in payload:
-        init_data = payload['init_data']
-        logger.info(f"init_data length: {len(init_data)}")
-        logger.info(f"init_data prefix: {init_data[:100]}")
-        logger.info(f"init_data suffix: {init_data[-100:]}")
+        return _json_response({"error": "invalid_json"}, status=400)
 
     try:
         validated = validate_request_body(TelegramAuthRequest, payload)
         init_data = validated.init_data
-        logger.info(f"Validated init_data length: {len(init_data)}")
-        logger.info(f"Validated init_data prefix: {init_data[:100]}")
     except AppValidationError as exc:
-        logger.error(f"Validation error: {exc}")
-        return JsonResponse({"error": str(exc)}, status=400)
+        logger.info("Telegram auth validation error: %s", exc)
+        return _json_response({"error": str(exc)}, status=400)
 
     try:
         tg = TelegramAuthService.validate_init_data(init_data, max_age_seconds=300)
-    except AuthenticationError as exc:
-        raise exc
-    except Exception as exc:
-        raise AuthenticationError(f"Failed to validate Telegram data: {str(exc)}")
+    except Exception:
+        logger.exception("Telegram auth failed: validate_init_data exception")
+        return _json_response({"error": "invalid_init_data"}, status=400)
 
     telegram_user_id = int(tg["id"])
     first_name = str(tg.get("first_name") or "").strip()
@@ -175,10 +195,9 @@ def telegram_auth(request):
         user_agent=request.META.get("HTTP_USER_AGENT"),
     )
 
-    logger.info(f"Auth success - telegram_user_id: {telegram_user_id}, first_name: {first_name}, username: {telegram_username}")
-    logger.info(f"Auth success - token: {token[:50]}...")
+    logger.info("Auth success - telegram_user_id=%s", telegram_user_id)
 
-    response = JsonResponse(
+    response = _json_response(
         {
             "session_token": token,
             "driver": {
@@ -186,10 +205,11 @@ def telegram_auth(request):
                 "first_name": first_name,
                 "username": telegram_username,
             },
-        }
+        },
+        status=200,
     )
     
-    logger.info(f"Auth success - response prepared with status 200")
+    logger.debug("Auth success - response prepared (status=200)")
     response.set_cookie(
         "session_token",
         token,

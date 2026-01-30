@@ -5,11 +5,41 @@ All exceptions follow a consistent structure with error codes and messages.
 Integration with Sentry for error monitoring and tracking.
 """
 
+import json
 import logging
 from typing import Optional, Dict, Any
 from django.http import HttpRequest, JsonResponse
 
 logger = logging.getLogger(__name__)
+
+"""
+GOAL: Create a JsonResponse that also provides a .json() helper for tests.
+
+PARAMETERS:
+  payload: dict[str, Any] - JSON-serializable response payload - Must be a dict
+  status: int - HTTP status code - Must be positive
+
+RETURNS:
+  JsonResponse - Django JsonResponse with added .json() method - Never None
+
+RAISES:
+  TypeError: If payload is not JSON serializable
+
+GUARANTEES:
+  - Returned response is a valid Django JsonResponse
+  - Returned response supports response.json() in RequestFactory-based tests
+"""
+def _json_response(payload: dict[str, Any], status: int) -> JsonResponse:
+    """
+    Build JsonResponse and attach a small json() helper for parity with Django test client responses.
+    """
+    response = JsonResponse(payload, status=status)
+
+    def _json() -> Any:
+        return json.loads(response.content.decode(response.charset))
+
+    setattr(response, "json", _json)
+    return response
 
 # Import Sentry monitoring functions (graceful degradation if not available)
 try:
@@ -404,7 +434,7 @@ def custom_exception_handler(exc: Exception, context: Dict[str, Any]) -> JsonRes
             except Exception:
                 logger.exception("Failed to capture exception to Sentry")
         
-        return JsonResponse(response_data, status=exc.http_status)
+        return _json_response(response_data, status=exc.http_status)
     
     # Handle Django ValidationError
     if hasattr(exc, "messages") and isinstance(exc.messages, list):
@@ -413,7 +443,7 @@ def custom_exception_handler(exc: Exception, context: Dict[str, Any]) -> JsonRes
             "message": "Validation failed",
             "details": {"errors": exc.messages}
         }
-        return JsonResponse(response_data, status=400)
+        return _json_response(response_data, status=400)
     
     # Generic fallback for unexpected exceptions
     logger.exception("Unhandled exception in custom_exception_handler")
@@ -421,4 +451,4 @@ def custom_exception_handler(exc: Exception, context: Dict[str, Any]) -> JsonRes
         "error_code": "INTERNAL_ERROR",
         "message": "An unexpected error occurred",
     }
-    return JsonResponse(response_data, status=500)
+    return _json_response(response_data, status=500)

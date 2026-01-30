@@ -26,6 +26,7 @@ class UserDTO(BaseModel):
     """
     id: int
     telegram_id: int
+    email: Optional[str] = None
     username: Optional[str] = None
     first_name: Optional[str] = None
     last_name: Optional[str] = None
@@ -255,18 +256,42 @@ RAISES:
 
 GUARANTEES:
   - Returned DTO contains all model fields that have matching DTO fields
-  - DateTime fields are converted to ISO format strings
-  - Decimal fields are converted to float
+  - If model is a Django User and dto_class is UserDTO, missing fields are filled from standard User attributes
   - Original model is not modified
 """
 def model_to_dto[T](model: Model, dto_class: Type[T]) -> T:
     """
-    Extract model fields and pass to DTO constructor using from_attributes=True.
-    Pydantic v2 automatically handles datetime and decimal conversions.
+    Validate the model instance against the DTO schema using from_attributes=True.
+    For Django User -> UserDTO conversion, build an explicit mapping so required DTO fields exist.
     """
     if not hasattr(model, '_meta'):
         raise TypeError(f"Expected Django model, got {type(model)}")
     
+    if dto_class is UserDTO:
+        from django.contrib.auth import get_user_model
+
+        UserModel = get_user_model()
+        if isinstance(model, UserModel):
+            driver_profile = getattr(model, "driver_profile", None)
+            created_at = getattr(model, "date_joined", None) or datetime.utcnow()
+            updated_at = getattr(model, "last_login", None) or created_at
+
+            data: dict[str, Any] = {
+                "id": model.id,
+                "telegram_id": getattr(driver_profile, "telegram_user_id", 0) or 0,
+                "email": getattr(model, "email", None),
+                "username": getattr(model, "username", None),
+                "first_name": getattr(model, "first_name", None),
+                "last_name": getattr(model, "last_name", None),
+                "phone": None,
+                "is_driver": driver_profile is not None,
+                "is_active": getattr(model, "is_active", True),
+                "created_at": created_at,
+                "updated_at": updated_at,
+            }
+
+            return dto_class.model_validate(data)
+
     return dto_class.model_validate(model)
 
 

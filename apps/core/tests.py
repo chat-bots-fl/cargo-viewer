@@ -3795,6 +3795,7 @@ class TestCDNManagementCommand:
           - Skipped count matches file count
         """
         from apps.core.management.commands.upload_static_to_cdn import Command
+        from pathlib import Path
 
         # Create temporary static files
         static_dir = tmp_path / "static"
@@ -4320,9 +4321,7 @@ class TestLazyLoadingIntegration:
 
         template = Template('''
             {% load lazy_loading %}
-            {% lazy_image src="/static/img/test.jpg" alt="Test"
-               srcset="/static/img/test-small.jpg 300w, /static/img/test-large.jpg 800w"
-               sizes="(max-width: 600px) 300px, 800px" %}
+            {% lazy_image src="/static/img/test.jpg" alt="Test" srcset="/static/img/test-small.jpg 300w, /static/img/test-large.jpg 800w" sizes="(max-width: 600px) 300px, 800px" %}
         ''')
         context = Context()
         rendered = template.render(context)
@@ -4374,7 +4373,7 @@ class TestLazyLoadingIntegration:
         rendered = template.render(context)
 
         assert rendered.count('data-src') == 3
-        assert rendered.count('lazy') == 3
+        assert rendered.count('lazy-loading') == 3
         assert 'test1.jpg' in rendered
         assert 'test2.jpg' in rendered
         assert 'test3.jpg' in rendered

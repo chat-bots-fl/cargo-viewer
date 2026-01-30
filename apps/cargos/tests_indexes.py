@@ -82,6 +82,7 @@ class CargoCacheIndexesTest(TestCase):
         Test that index on (user, created_at) is used in query.
         """
         with connection.cursor() as cursor:
+            cursor.execute("SET LOCAL enable_seqscan = off")
             cursor.execute("""
                 EXPLAIN ANALYZE
                 SELECT * FROM cargo_cache 

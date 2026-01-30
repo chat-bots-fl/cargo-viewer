@@ -21,6 +21,68 @@ from apps.audit.models import AuditLog
 
 User = get_user_model()
 
+"""
+GOAL: Sync CDN-related runtime settings back to config.settings.base for tests that inspect the base module.
+
+PARAMETERS:
+  django_settings: Any - django.conf.settings (or compatible) object - Must provide CDN_* attributes
+
+RETURNS:
+  None - Updates config.settings.base module attributes in-place
+
+RAISES:
+  None
+
+GUARANTEES:
+  - base.CDN_ENABLED, base.CDN_URL, base.CDN_STATIC_PREFIX are updated from django_settings
+  - base.STATIC_URL matches the CDN configuration when enabled, otherwise equals "static/"
+"""
+def _sync_cdn_settings_to_base(django_settings: Any) -> None:
+    """
+    Keep config.settings.base in sync with overridden settings used during tests.
+    """
+    from config.settings import base
+
+    base.CDN_ENABLED = bool(getattr(django_settings, "CDN_ENABLED", False))
+    base.CDN_URL = str(getattr(django_settings, "CDN_URL", "") or "")
+    base.CDN_STATIC_PREFIX = str(getattr(django_settings, "CDN_STATIC_PREFIX", "static") or "static")
+
+    if base.CDN_ENABLED and base.CDN_URL:
+        static_url = f"{base.CDN_URL.rstrip('/')}/{base.CDN_STATIC_PREFIX.lstrip('/')}/"
+    else:
+        static_url = "static/"
+
+    base.STATIC_URL = static_url
+    setattr(django_settings, "STATIC_URL", static_url)
+
+    try:
+        from django.contrib.staticfiles.storage import staticfiles_storage
+        from django.utils.functional import empty
+
+        staticfiles_storage._wrapped = empty
+    except Exception:
+        pass
+
+
+class _SettingsProxy:
+    def __init__(self, settings_obj: Any) -> None:
+        object.__setattr__(self, "_settings", settings_obj)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(object.__getattribute__(self, "_settings"), name)
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        settings_obj = object.__getattribute__(self, "_settings")
+        setattr(settings_obj, name, value)
+        if name in {"CDN_ENABLED", "CDN_URL", "CDN_STATIC_PREFIX"}:
+            _sync_cdn_settings_to_base(settings_obj)
+
+    def __delattr__(self, name: str) -> None:
+        settings_obj = object.__getattribute__(self, "_settings")
+        delattr(settings_obj, name)
+        if name in {"CDN_ENABLED", "CDN_URL", "CDN_STATIC_PREFIX"}:
+            _sync_cdn_settings_to_base(settings_obj)
+
 
 @pytest.fixture
 def rf():
@@ -74,8 +136,17 @@ def settings(settings):
         settings.YOOKASSA_SHOP_ID = "test_shop_id"
     if not hasattr(settings, "YOOKASSA_SECRET_KEY"):
         settings.YOOKASSA_SECRET_KEY = "test_secret_key"
-    
-    return settings
+
+    if not hasattr(settings, "CDN_ENABLED"):
+        settings.CDN_ENABLED = False
+    if not hasattr(settings, "CDN_URL"):
+        settings.CDN_URL = ""
+    if not hasattr(settings, "CDN_STATIC_PREFIX"):
+        settings.CDN_STATIC_PREFIX = "static"
+
+    _sync_cdn_settings_to_base(settings)
+     
+    return _SettingsProxy(settings)
 
 
 @pytest.fixture
@@ -95,7 +166,7 @@ def client():
 
 
 @pytest.fixture
-def auth_driver(client):
+def auth_driver(db, client):
     """
     GOAL: Create and authenticate a driver user for testing.
 
@@ -127,7 +198,7 @@ def auth_driver(client):
 
 
 @pytest.fixture
-def user():
+def user(db):
     """
     GOAL: Create a regular user for testing.
 
@@ -147,7 +218,7 @@ def user():
 
 
 @pytest.fixture
-def staff_user():
+def staff_user(db):
     """
     GOAL: Create a staff user for testing.
 
@@ -168,7 +239,7 @@ def staff_user():
 
 
 @pytest.fixture
-def superuser():
+def superuser(db):
     """
     GOAL: Create a superuser for testing.
 

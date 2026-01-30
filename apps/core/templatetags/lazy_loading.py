@@ -28,7 +28,7 @@ def lazy_image_enabled() -> bool:
       bool - True if lazy loading enabled, False otherwise
 
     GUARANTEES:
-      - Returns False if setting not defined
+      - Returns True if setting not defined
       - Returns False if LAZY_LOADING_ENABLED is False
     """
     return getattr(settings, 'LAZY_LOADING_ENABLED', True)
@@ -97,6 +97,7 @@ def lazy_image(
 
     # Check if lazy loading is enabled
     enabled = getattr(settings, 'LAZY_LOADING_ENABLED', True)
+    effective_loading = loading if enabled else "eager"
 
     # Get default placeholder if not provided
     if placeholder is None:
@@ -108,13 +109,13 @@ def lazy_image(
         classes.append(class_name)
     if enabled:
         classes.append('lazy')
-    classes.append('lazy-loading')
+        classes.append('lazy-loading')
 
     # Build attributes
     attrs = {
         'class': ' '.join(classes),
         'alt': alt,
-        'loading': loading,
+        'loading': effective_loading,
     }
 
     if width:
@@ -135,7 +136,7 @@ def lazy_image(
         'sizes': sizes,
         'enabled': enabled,
         'attrs': attrs,
-        'loading': loading,
+        'loading': effective_loading,
     }
 
     return template_context

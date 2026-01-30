@@ -55,9 +55,7 @@ except ImportError:
 
 @dataclass(frozen=True)
 class SessionValidationResult:
-    user_dto: Optional[UserDTO]
-    driver_dto: Optional[DriverProfileDTO]
-    session_dto: Optional[TelegramSessionDTO]
+    driver_data: dict[str, Any]
     refreshed_token: str | None = None
 
 
@@ -117,10 +115,6 @@ class TelegramAuthService:
             secret = hashlib.sha256(bot_token.encode("utf-8")).digest()
             calculated_hash = hmac.new(secret, data_check_string.encode("utf-8"), hashlib.sha256).hexdigest()
 
-            logger.info(f"Telegram hash validation - calculated: {calculated_hash}, received: {hash_value}")
-            logger.info(f"Telegram hash validation - data_check_string: {data_check_string}")
-            logger.info(f"Telegram hash validation - bot_token_prefix: {bot_token[:10]}...")
-
             if not hmac.compare_digest(calculated_hash, hash_value):
                 _record_auth_failure("invalid_hash")
                 
@@ -135,7 +129,7 @@ class TelegramAuthService:
                     }
                 )
                 
-                logger.warning("Invalid Telegram hash (init_data_prefix=%r)", init_data[:64])
+                logger.warning("Invalid Telegram hash")
                 raise ValidationError("Invalid Telegram hash")
         elif skip_hash_validation:
             logger.warning("TELEGRAM_SKIP_HASH_VALIDATION is True - skipping hash validation (DEVELOPMENT MODE)")
@@ -255,17 +249,8 @@ class SessionService:
 
         session_id = str(uuid.uuid4())
         cache_key = cls.CACHE_KEY_FMT.format(user_id=user.id)
-        
-        # Log cache operation
-        logger.info(f"SessionService.create_session - user_id={user.id}, session_id={session_id}, cache_key={cache_key}")
+
         cache.set(cache_key, session_id, timeout=ttl_seconds)
-        
-        # Verify cache was set
-        cached_value = cache.get(cache_key)
-        logger.info(f"SessionService.create_session - cache.set() returned, cached_value={cached_value}, expected={session_id}")
-        
-        if cached_value != session_id:
-            logger.error(f"SessionService.create_session - CACHE MISMATCH! cached={cached_value}, expected={session_id}")
 
         # Use repository if provided, otherwise direct ORM access for backward compatibility
         if session_repo is not None:
@@ -381,17 +366,30 @@ class TokenService:
         if not skip_cache_validation:
             cache_key = SessionService.CACHE_KEY_FMT.format(user_id=user_id)
             cached_sid = cache.get(cache_key)
-            
-            # Log cache operation
-            logger.info(f"TokenService.validate_session - user_id={user_id}, session_id={session_id}, cache_key={cache_key}, cached_sid={cached_sid}")
-            
+
+            logger.debug("TokenService.validate_session: cache check (user_id=%s)", user_id)
+
             if not cached_sid or str(cached_sid) != str(session_id):
-                logger.error(f"TokenService.validate_session - SESSION REVOKED! cached_sid={cached_sid}, expected={session_id}")
+                logger.info("TokenService.validate_session: session revoked (user_id=%s)", user_id)
                 raise ValidationError("Session revoked")
             
             cache.set(cache_key, str(session_id), timeout=SessionService.DEFAULT_TTL_SECONDS)
         else:
-            logger.warning("SKIP_CACHE_VALIDATION is True - skipping cache validation (DEVELOPMENT MODE)")
+            logger.debug("SKIP_CACHE_VALIDATION is True - skipping cache validation (DEVELOPMENT MODE)")
+
+        user_id_int = int(user_id)
+
+        try:
+            has_active_session = TelegramSession.objects.filter(
+                user_id=user_id_int,
+                session_id=str(session_id),
+                revoked_at__isnull=True,
+            ).exists()
+        except ValidationError as exc:
+            raise ValidationError("Invalid session token payload") from exc
+
+        if not has_active_session:
+            raise ValidationError("Session revoked")
 
         refreshed_token: str | None = None
         exp = payload.get("exp")
@@ -405,65 +403,18 @@ class TokenService:
                     telegram_user_id=int(payload["tg_id"]) if "tg_id" in payload else None,
                 )
 
-        user_id_int = int(user_id)
-        
-        # Try to get user model
-        user_dto: Optional[UserDTO] = None
-        driver_dto: Optional[DriverProfileDTO] = None
-        session_dto: Optional[TelegramSessionDTO] = None
-        
-        try:
-            user = User.objects.get(id=user_id_int)
-            
-            # Get driver profile first to get telegram_id
-            telegram_id = None
-            if hasattr(user, 'driverprofile'):
-                driver_profile = user.driverprofile
-                telegram_id = driver_profile.telegram_user_id
-                driver_dto = model_to_dto(driver_profile, DriverProfileDTO)
-            
-            # Create UserDTO manually since Django User doesn't have telegram_id
-            if telegram_id:
-                user_dto = UserDTO(
-                    id=user.id,
-                    telegram_id=telegram_id,
-                    username=user.username,
-                    first_name=user.first_name,
-                    last_name=user.last_name,
-                    phone=user.email,  # Using email as phone for now
-                    is_driver=driver_dto is not None,
-                    is_active=user.is_active,
-                    created_at=user.date_joined,
-                    updated_at=user.last_login or user.date_joined,
-                )
-            
-            # Try to get active session
-            session = TelegramSession.objects.filter(
-                user=user,
-                session_id=str(session_id),
-                revoked_at__isnull=True
-            ).first()
-            if session:
-                # Create TelegramSessionDTO manually since model doesn't have telegram_id and updated_at
-                session_dto = TelegramSessionDTO(
-                    id=session.id,
-                    user_id=session.user_id,
-                    telegram_id=telegram_id if telegram_id else 0,
-                    session_data={},
-                    is_active=session.revoked_at is None,
-                    created_at=session.created_at,
-                    updated_at=session.created_at,  # Using created_at since model doesn't have updated_at
-                )
-                
-        except User.DoesNotExist:
-            pass
-        
-        return SessionValidationResult(
-            user_dto=user_dto,
-            driver_dto=driver_dto,
-            session_dto=session_dto,
-            refreshed_token=refreshed_token,
-        )
+        telegram_user_id = payload.get("tg_id")
+        driver_data: dict[str, Any] = {
+            "driver_data": {},
+            "user_id": user_id_int,
+            "session_id": str(session_id),
+            "session_valid": True,
+        }
+        if telegram_user_id is not None:
+            driver_data["telegram_id"] = int(telegram_user_id)
+            driver_data["driver_data"] = {"telegram_user_id": int(telegram_user_id)}
+
+        return SessionValidationResult(driver_data=driver_data, refreshed_token=refreshed_token)
 
 
 """

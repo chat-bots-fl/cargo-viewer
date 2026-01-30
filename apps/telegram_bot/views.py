@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 
 from django.core.exceptions import ValidationError
 from django.http import HttpResponse, JsonResponse
@@ -14,6 +15,8 @@ from apps.core.schemas import TelegramResponseRequest
 from apps.core.validation import validate_request_body
 from apps.telegram_bot.handlers import TelegramUpdateHandler
 from apps.telegram_bot.services import TelegramBotService
+
+logger = logging.getLogger(__name__)
 
 # Import for OpenAPI documentation (graceful degradation if not available)
 try:
@@ -104,8 +107,9 @@ def telegram_webhook(request):
     try:
         handled = TelegramUpdateHandler.handle_update(update)
         return JsonResponse({"ok": True, "handled": handled})
-    except Exception as exc:
-        return JsonResponse({"ok": False, "error": str(exc)}, status=500)
+    except Exception:
+        logger.exception("Telegram webhook failed")
+        return JsonResponse({"ok": False, "error": "internal_error"}, status=500)
 
 
 """
@@ -213,6 +217,12 @@ def handle_response(request):
             return HttpResponse('<div class="muted">Нужна подписка. Перейдите в раздел "Подписка".</div>', status=402)
         return HttpResponse(f'<div class="muted">Ошибка: {exc}</div>', status=400)
     except Exception as exc:
+        logger.exception(
+            "Telegram handle_response failed (user_id=%s cargo_id=%s)",
+            getattr(request.user, "id", None),
+            cargo_id,
+        )
+        exc = "internal_error"
         return HttpResponse(f'<div class="muted">Ошибка отправки: {exc}</div>', status=502)
 
     return HttpResponse(f'<div class="muted">✅ Отправлено (id: {result["response_id"]}).</div>')

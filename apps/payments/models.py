@@ -43,9 +43,8 @@ class Payment(models.Model):
     class Meta:
         db_table = "payments"
         indexes = [
-            models.Index(fields=["user", "created_at"]),
-            models.Index(fields=["yukassa_payment_id"]),
-            models.Index(fields=["status", "created_at"]),
+            models.Index(fields=["user", "created_at"], name="payments_user_created_at_idx"),
+            models.Index(fields=["status", "created_at"], name="payments_status_created_at_idx"),
         ]
 
     def __str__(self) -> str:
@@ -64,10 +63,9 @@ class PaymentHistory(models.Model):
         db_table = "payment_history"
         ordering = ["-created_at"]
         indexes = [
-            models.Index(fields=["event_type", "created_at"]),
-            models.Index(fields=["payment", "created_at"]),
+            models.Index(fields=["event_type", "created_at"], name="payhist_event_type_created_at"),
+            models.Index(fields=["payment", "created_at"], name="payhist_payment_created_at"),
         ]
 
     def __str__(self) -> str:
         return f"PaymentHistory(payment_id={self.payment_id}, event_type={self.event_type})"
-

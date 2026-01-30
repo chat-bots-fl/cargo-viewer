@@ -14,8 +14,8 @@ from django.utils import timezone
 
 from apps.audit.services import AuditService
 from apps.core.decorators import circuit_breaker
-from apps.core.dtos import PaymentDTO, model_to_dto, dto_to_dict
 from apps.core.repositories import PaymentHistoryRepository, PaymentRepository, SystemSettingRepository
+from apps.feature_flags.models import SystemSetting
 from apps.payments.models import Payment, PaymentHistory
 
 logger = logging.getLogger(__name__)
@@ -150,8 +150,17 @@ class YuKassaClient:
         }
         
         try:
-            if transaction:
-                with transaction:
+            try:
+                if transaction:
+                    with transaction:
+                        resp = requests.post(
+                            url,
+                            json=payload,
+                            auth=(self.shop_id, self.secret_key),
+                            headers={"Idempotence-Key": str(uuid.uuid4())},
+                            timeout=10,
+                        )
+                else:
                     resp = requests.post(
                         url,
                         json=payload,
@@ -159,14 +168,8 @@ class YuKassaClient:
                         headers={"Idempotence-Key": str(uuid.uuid4())},
                         timeout=10,
                     )
-            else:
-                resp = requests.post(
-                    url,
-                    json=payload,
-                    auth=(self.shop_id, self.secret_key),
-                    headers={"Idempotence-Key": str(uuid.uuid4())},
-                    timeout=10,
-                )
+            except requests.RequestException as exc:
+                raise YuKassaAPIError(f"YuKassa create_payment request failed: {exc}") from exc
             
             try:
                 resp.raise_for_status()
@@ -291,11 +294,14 @@ class YuKassaClient:
         url = f"{self.base_url}/payments/{payment_id}"
         
         try:
-            if transaction:
-                with transaction:
+            try:
+                if transaction:
+                    with transaction:
+                        resp = requests.get(url, auth=(self.shop_id, self.secret_key), timeout=10)
+                else:
                     resp = requests.get(url, auth=(self.shop_id, self.secret_key), timeout=10)
-            else:
-                resp = requests.get(url, auth=(self.shop_id, self.secret_key), timeout=10)
+            except requests.RequestException as exc:
+                raise YuKassaAPIError(f"YuKassa get_payment request failed: {exc}") from exc
             
             try:
                 resp.raise_for_status()
@@ -395,7 +401,7 @@ class PaymentService:
       system_setting_repo: SystemSettingRepository | None - Repository for system setting operations - Optional
 
     RETURNS:
-      PaymentDTO - Payment DTO with status='pending' and confirmation_url when available - Never None
+      Payment - Payment model instance with status='pending' and confirmation_url when available - Never None
 
     RAISES:
       ValidationError: If tariff invalid or return_url invalid
@@ -417,7 +423,7 @@ class PaymentService:
         payment_repo: PaymentRepository | None = None,
         payment_history_repo: PaymentHistoryRepository | None = None,
         system_setting_repo: SystemSettingRepository | None = None,
-    ) -> PaymentDTO:
+    ) -> Payment:
         """
         Validate tariff, create DB record, call YuKassa, update record, and write audit+history.
         """
@@ -462,7 +468,7 @@ class PaymentService:
             )
         
         if existing:
-            return model_to_dto(existing, PaymentDTO)
+            return existing
 
         # Use repository if provided, otherwise direct ORM access for backward compatibility
         if payment_repo is not None:
@@ -567,4 +573,4 @@ class PaymentService:
             details={"tariff": tariff_name, "days": days, "amount": str(amount)},
         )
 
-        return model_to_dto(payment, PaymentDTO)
+        return payment

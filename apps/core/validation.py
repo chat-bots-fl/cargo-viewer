@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from typing import Type, TypeVar, Any
 from pydantic import ValidationError as PydanticValidationError
-from django.core.exceptions import ValidationError as DjangoValidationError
 
 from apps.core.exceptions import ValidationError as AppValidationError
 
@@ -71,19 +70,18 @@ RAISES:
 
 GUARANTEES:
   - All validation errors from Pydantic are converted to AppValidationError
-  - Empty strings are treated as None for optional fields
+  - Empty strings are treated as missing values (defaults apply)
   - Error messages are user-friendly and field-specific
 """
 def validate_query_params(schema_class: Type[T], query_params: dict[str, Any]) -> T:
     """
     Parse and validate query parameters using Pydantic schema, converting validation errors.
     """
-    # Clean up query params: convert empty strings to None for optional fields
+    # Clean up query params: treat empty strings as missing values so schema defaults apply.
     cleaned_params = {}
     for key, value in query_params.items():
         if value == "" or value is None:
-            # Let Pydantic handle optional fields with None
-            cleaned_params[key] = None
+            continue
         else:
             cleaned_params[key] = value
 

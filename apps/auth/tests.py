@@ -8,6 +8,7 @@ from typing import Any
 from unittest.mock import Mock, patch
 from urllib.parse import urlencode
 
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.http import HttpResponse
@@ -17,6 +18,7 @@ from django.utils import timezone as dj_timezone
 from apps.auth.models import DriverProfile, TelegramSession
 
 from apps.auth.decorators import require_admin
+from apps.auth.middleware import JWTAuthenticationMiddleware
 from apps.auth.services import (
     TelegramAuthService,
     SessionService,
@@ -183,10 +185,10 @@ class RequireAdminDecoratorTests(TestCase):
     
     def test_require_admin_unauthenticated(self):
         """Test @require_admin with unauthenticated user."""
+        from django.contrib.auth.models import AnonymousUser
+
         request = self.factory.get("/admin/")
-        request.user = self.user
-        # Simulate unauthenticated
-        request.user.is_authenticated = False
+        request.user = AnonymousUser()
         
         decorated_view = require_admin(self._create_mock_view())
         response = decorated_view(request)
@@ -635,10 +637,14 @@ class TokenServiceTests(TestCase):
         import jwt
         from datetime import timedelta
         
+        session = TelegramSession.objects.filter(user=self.user, revoked_at__isnull=True).first()
+        self.assertIsNotNone(session)
+        session_id = str(session.session_id)
+        
         # Create token near expiry (within REFRESH_THRESHOLD_SECONDS)
         near_expiry_payload = {
             "user_id": self.user.id,
-            "sid": "test-session-id",
+            "sid": session_id,
             "iat": int((datetime.now(tz=timezone.utc) - timedelta(hours=20)).timestamp()),
             "exp": int((datetime.now(tz=timezone.utc) + timedelta(hours=1)).timestamp()),
             "tg_id": 123456789
@@ -648,7 +654,7 @@ class TokenServiceTests(TestCase):
         # Store session in cache
         from django.core.cache import cache
         cache_key = SessionService.CACHE_KEY_FMT.format(user_id=self.user.id)
-        cache.set(cache_key, "test-session-id", timeout=SessionService.DEFAULT_TTL_SECONDS)
+        cache.set(cache_key, session_id, timeout=SessionService.DEFAULT_TTL_SECONDS)
         
         result = TokenService.validate_session(near_expiry_token)
         
@@ -737,7 +743,7 @@ class JWTAuthenticationMiddlewareTests(TestCase):
             'refreshed_token': 'new_refreshed_token'
         })()
         
-        response = self.factory.get("/test/")
+        response = HttpResponse("OK")
         response = self.middleware.process_response(request, response)
         
         self.assertEqual(response["X-Session-Token"], "new_refreshed_token")
@@ -750,12 +756,17 @@ class JWTAuthenticationMiddlewareTests(TestCase):
             'refreshed_token': None
         })()
         
-        response = self.factory.get("/test/")
+        response = HttpResponse("OK")
         response = self.middleware.process_response(request, response)
         
         self.assertNotIn("X-Session-Token", response)
 
 
+@override_settings(
+    TELEGRAM_BOT_TOKEN="123:TESTTOKEN",
+    TELEGRAM_SKIP_HASH_VALIDATION=False,
+    TELEGRAM_SKIP_AUTH_DATE_VALIDATION=False,
+)
 class TelegramAuthViewTests(TestCase):
     """Test telegram_auth view for Telegram WebApp authentication."""
     
@@ -921,4 +932,3 @@ class TelegramAuthViewTests(TestCase):
         self.assertIn("session_token", response.cookies)
         self.assertTrue(response.cookies["session_token"].get("httponly"))
         self.assertEqual(response.cookies["session_token"].get("samesite"), "Lax")
-

@@ -17,11 +17,31 @@ from django.core.cache import cache
 logger = logging.getLogger("api_versioning")
 
 
-# Default settings (can be overridden in config/settings.py)
-API_VERSIONING_ENABLED = getattr(settings, "API_VERSIONING_ENABLED", True)
-API_DEFAULT_VERSION = getattr(settings, "API_DEFAULT_VERSION", "v3")
-API_SUPPORTED_VERSIONS = getattr(settings, "API_SUPPORTED_VERSIONS", ["v1", "v2", "v3"])
-API_VERSION_HEADER = getattr(settings, "API_VERSION_HEADER", "X-API-Version")
+"""
+GOAL: Read API versioning configuration from Django settings.
+
+PARAMETERS:
+  None
+
+RETURNS:
+  tuple[bool, str, list[str], str] - (enabled, default_version, supported_versions, header_name)
+
+RAISES:
+  None
+
+GUARANTEES:
+  - Returns sane defaults when settings are missing
+  - Supported versions list is never empty
+"""
+def _get_versioning_config() -> tuple[bool, str, list[str], str]:
+    """
+    Read API versioning knobs from settings so override_settings/fixtures are respected.
+    """
+    enabled = bool(getattr(settings, "API_VERSIONING_ENABLED", True))
+    default_version = str(getattr(settings, "API_DEFAULT_VERSION", "v3") or "v3")
+    supported_versions = list(getattr(settings, "API_SUPPORTED_VERSIONS", ["v1", "v2", "v3"]) or ["v3"])
+    header_name = str(getattr(settings, "API_VERSION_HEADER", "X-API-Version") or "X-API-Version")
+    return enabled, default_version, supported_versions, header_name
 
 
 """
@@ -45,36 +65,38 @@ GUARANTEES:
 """
 def get_api_version(request: HttpRequest, default: Optional[str] = None) -> str:
     """
-    Check URL path first (/api/v1/...), then headers, then default.
+    Check headers first, then URL path (/api/v1/...), then default.
     Validate version is supported, fallback to default if invalid.
     """
-    if not API_VERSIONING_ENABLED:
-        return API_DEFAULT_VERSION
+    enabled, default_setting, supported_versions, header_name = _get_versioning_config()
+    default_version = default or default_setting
+
+    if not enabled:
+        request.api_version = default_version
+        return default_version
 
     version = None
-    default_version = default or API_DEFAULT_VERSION
+
+    # Try extracting from header
+    header_version = request.headers.get(header_name, "")
+    if header_version and header_version in supported_versions:
+        version = header_version
 
     # Try extracting from URL path
     path = request.path
-    if path.startswith("/api/"):
+    if not version and path.startswith("/api/"):
         parts = path.split("/")
         if len(parts) >= 3 and parts[2].startswith("v"):
             potential_version = parts[2]
-            if potential_version in API_SUPPORTED_VERSIONS:
+            if potential_version in supported_versions:
                 version = potential_version
-
-    # Try extracting from header
-    if not version:
-        header_version = request.headers.get(API_VERSION_HEADER, "")
-        if header_version and header_version in API_SUPPORTED_VERSIONS:
-            version = header_version
 
     # Fallback to default
     if not version:
         version = default_version
 
     # Validate version is supported
-    if version not in API_SUPPORTED_VERSIONS:
+    if version not in supported_versions:
         logger.warning(
             f"Invalid API version '{version}', using default '{default_version}'"
         )
@@ -114,12 +136,13 @@ def versioned_url(endpoint: str, version: Optional[str] = None) -> str:
     if not endpoint.startswith("/"):
         raise ValueError(f"Endpoint must start with '/', got: {endpoint}")
 
-    api_version = version or API_DEFAULT_VERSION
+    _enabled, default_version, supported_versions, _header_name = _get_versioning_config()
+    api_version = version or default_version
 
-    if api_version not in API_SUPPORTED_VERSIONS:
+    if api_version not in supported_versions:
         raise ValueError(
             f"Unsupported API version '{api_version}'. "
-            f"Supported: {API_SUPPORTED_VERSIONS}"
+            f"Supported: {supported_versions}"
         )
 
     # Remove leading / from endpoint to avoid double slash
@@ -174,9 +197,12 @@ class APIVersioningMiddleware:
         except Exception as exc:
             # Graceful degradation: use default version on error
             logger.error(f"API versioning error: {exc}, using default version")
-            request.api_version = API_DEFAULT_VERSION
+            _enabled, default_version, _supported_versions, _header_name = _get_versioning_config()
+            request.api_version = default_version
 
         response = self.get_response(request)
+        if not isinstance(response, HttpResponse):
+            response = HttpResponse()
 
         # Add version to response headers
         response["X-API-Version"] = request.api_version
@@ -205,7 +231,8 @@ def is_version_supported(version: str) -> bool:
     Check if version is in API_SUPPORTED_VERSIONS list.
     Case-sensitive comparison.
     """
-    return version in API_SUPPORTED_VERSIONS
+    _enabled, _default_version, supported_versions, _header_name = _get_versioning_config()
+    return version in supported_versions
 
 
 """
@@ -230,7 +257,8 @@ def get_supported_versions() -> list[str]:
     Return sorted list of supported API versions.
     Ensures consistent ordering across application.
     """
-    return sorted(API_SUPPORTED_VERSIONS, key=lambda v: int(v[1:]))
+    _enabled, _default_version, supported_versions, _header_name = _get_versioning_config()
+    return sorted(supported_versions, key=lambda v: int(v[1:]))
 
 
 """

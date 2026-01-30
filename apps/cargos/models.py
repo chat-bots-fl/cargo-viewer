@@ -17,10 +17,9 @@ class CargoCache(models.Model):
     class Meta:
         db_table = "cargo_cache"
         indexes = [
-            models.Index(fields=["user", "cache_key"]),
-            models.Index(fields=["user", "created_at"]),
+            models.Index(fields=["user", "cache_key"], name="cargo_cache_user_cache_key_idx"),
+            models.Index(fields=["user", "created_at"], name="cargo_cache_user_created_at"),
         ]
 
     def __str__(self) -> str:
         return f"CargoCache(user_id={self.user_id}, key={self.cache_key})"
-

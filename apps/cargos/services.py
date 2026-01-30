@@ -67,7 +67,7 @@ def _format_rub(price_kop: int | None) -> str:
     s = f"{rub:,.2f}".replace(",", " ").replace(".", ",")
     if s.endswith(",00"):
         s = s[:-3]
-    return f"{s} руб"
+    return f"{s} ₽"
 
 
 """
@@ -120,21 +120,21 @@ RAISES:
   None
 
 GUARANTEES:
-  - Tonnes formatted with 3 decimals and comma decimal separator
+  - Tonnes formatted with 1 decimal and comma decimal separator
   - Omits missing parts (weight or volume) without extra separators
 """
 def _format_wv(weight_kg: int | float | None, volume_m3: int | float | None) -> str:
     """
-    Convert kilograms to tonnes (3 decimals) and format volume without trailing .0.
+    Convert kilograms to tonnes (1 decimal) and format volume without trailing .0.
     """
     parts: list[str] = []
 
     if isinstance(weight_kg, (int, float)) and weight_kg:
         tonnes = (Decimal(str(weight_kg)) / Decimal(1000)).quantize(
-            Decimal("0.001"),
+            Decimal("0.1"),
             rounding=ROUND_HALF_UP,
         )
-        tonnes_str = f"{tonnes:,.3f}".replace(",", " ").replace(".", ",")
+        tonnes_str = f"{tonnes:,.1f}".replace(",", " ").replace(".", ",")
         parts.append(f"{tonnes_str} т")
 
     if isinstance(volume_m3, (int, float)) and volume_m3:
@@ -266,6 +266,16 @@ class CargoService:
                 "loading_type": load_short or load_name,
             }
         )
+        card.update(
+            {
+                "id": cargo_id,
+                "route": title,
+                "date": str(start_date or "").split("T", 1)[0],
+                "wv": _format_wv(weight, volume),
+                "price": _format_rub(price_kop),
+                "pills": [p for p in [load_short, truck_short] if p],
+            }
+        )
         return card
 
     """
@@ -294,7 +304,7 @@ class CargoService:
             raise ValueError("user_id must be > 0")
 
         filter_hash = _stable_hash(api_params)
-        cache_key = f"user:{user_id}:cargos:{cls.CACHE_KEY_VERSION_LIST}:{filter_hash}"
+        cache_key = f"user:{user_id}:cargos:{filter_hash}"
         try:
             cached = cache.get(cache_key)
         except Exception as exc:
@@ -356,7 +366,7 @@ class CargoService:
             return False
 
         filter_hash = _stable_hash(api_params)
-        cache_key = f"user:{user_id}:cargos:{cls.CACHE_KEY_VERSION_LIST}:{filter_hash}"
+        cache_key = f"user:{user_id}:cargos:{filter_hash}"
 
         ttl_fn = getattr(cache, "ttl", None)
         if callable(ttl_fn):
@@ -423,7 +433,7 @@ class CargoService:
         if not cargo_id:
             raise ValueError("cargo_id is required")
 
-        cache_key = f"cargo:{cargo_id}:detail:{cls.CACHE_KEY_VERSION_DETAIL}"
+        cache_key = f"cargo:{cargo_id}:detail"
         try:
             cached = cache.get(cache_key)
         except Exception as exc:
@@ -565,6 +575,16 @@ class CargoService:
                 "contacts_person_name": contacts_person_name,
                 "contacts_phone": contacts_phone,
                 "contacts_phone_tel": _normalize_phone_for_tel(contacts_phone),
+            }
+        )
+        detail.update(
+            {
+                "id": cargo_id,
+                "route": title,
+                "comment": comment,
+                "price": _format_rub(price_kop),
+                "wv": _format_wv(weight, volume),
+                "shipper": {"name": shipper_name, "inn": shipper_inn},
             }
         )
         return detail

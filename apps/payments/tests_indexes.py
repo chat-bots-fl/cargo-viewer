@@ -100,6 +100,7 @@ class PaymentIndexesTest(TestCase):
         Test that index on (status, created_at) is used in query.
         """
         with connection.cursor() as cursor:
+            cursor.execute("SET LOCAL enable_seqscan = off")
             cursor.execute("""
                 EXPLAIN ANALYZE
                 SELECT * FROM payments 
@@ -117,6 +118,7 @@ class PaymentIndexesTest(TestCase):
         Test that index on (user, created_at) is used in query.
         """
         with connection.cursor() as cursor:
+            cursor.execute("SET LOCAL enable_seqscan = off")
             cursor.execute("""
                 EXPLAIN ANALYZE
                 SELECT * FROM payments 
@@ -196,6 +198,7 @@ class PaymentHistoryIndexesTest(TestCase):
         Test that index on (payment, created_at) is used in query.
         """
         with connection.cursor() as cursor:
+            cursor.execute("SET LOCAL enable_seqscan = off")
             cursor.execute("""
                 EXPLAIN ANALYZE
                 SELECT * FROM payment_history 

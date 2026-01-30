@@ -277,6 +277,19 @@ if SENTRY_DSN:
         logging.error(f"Failed to initialize Sentry: {e}", exc_info=True)
 
 LOG_DIR = BASE_DIR / "logs"
+LOGGING: dict[str, Any] = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+        },
+    },
+    "root": {
+        "handlers": ["console"],
+        "level": "INFO",
+    },
+}
 
 # Django REST Framework settings
 REST_FRAMEWORK: dict[str, Any] = {

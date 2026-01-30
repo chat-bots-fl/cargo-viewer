@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from .base import *
+from .base import _env
 
 """
 GOAL: Configure production environment settings with maximum security and performance.
@@ -24,17 +25,25 @@ GUARANTEES:
 # Debug mode
 DEBUG = False
 
+# Fail fast on insecure or placeholder secrets
+_insecure_secret_keys = {"dev-secret-key-change-me", "change-me", "changeme", "secret", "password"}
+if not SECRET_KEY or str(SECRET_KEY).strip() in _insecure_secret_keys:
+    raise RuntimeError(
+        "SECRET_KEY must be set to a strong random value via environment variables in production."
+    )
+
 # Production hosts (should be configured via ALLOWED_HOSTS env var)
 if not ALLOWED_HOSTS:
     ALLOWED_HOSTS = ["cargo-viewer.com", "www.cargo-viewer.com"]
 
-# CDN Configuration for Production
 CDN_ENABLED = True
 CDN_URL = _env("CDN_URL", "https://cdn.cargo-viewer.com") or "https://cdn.cargo-viewer.com"
 CDN_STATIC_PREFIX = _env("CDN_STATIC_PREFIX", "static") or "static"
 
-# Rebuild STATIC_URL with CDN settings
-STATIC_URL = f"{CDN_URL.rstrip('/')}/{CDN_STATIC_PREFIX.lstrip('/')}/"
+if CDN_ENABLED and CDN_URL:
+    STATIC_URL = f"{CDN_URL.rstrip('/')}/{CDN_STATIC_PREFIX.lstrip('/')}/"
+else:
+    STATIC_URL = "static/"
 
 # Static files storage (compressed with manifest)
 STORAGES = {

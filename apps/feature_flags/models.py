@@ -42,7 +42,7 @@ class SystemSetting(models.Model):
     class Meta:
         db_table = "system_settings"
         indexes = [
-            models.Index(fields=["is_secret", "created_at"]),
+            models.Index(fields=["is_secret", "created_at"], name="sysset_is_secret_created_at"),
         ]
 
     def __str__(self) -> str:
@@ -151,7 +151,7 @@ class FeatureFlag(models.Model):
     class Meta:
         db_table = "feature_flags"
         indexes = [
-            models.Index(fields=["enabled", "created_at"]),
+            models.Index(fields=["enabled", "created_at"], name="ff_enabled_created_at"),
         ]
 
     def __str__(self) -> str:

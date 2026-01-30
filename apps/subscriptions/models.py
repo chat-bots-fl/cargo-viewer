@@ -25,7 +25,7 @@ class Subscription(models.Model):
     is_active = models.BooleanField(default=False, db_index=True)
     activated_at = models.DateTimeField(null=True, blank=True)
     expires_at = models.DateTimeField(null=True, blank=True, db_index=True)
-    access_token = models.CharField(max_length=128, unique=True, blank=True, db_index=True)
+    access_token = models.CharField(max_length=128, unique=True, blank=True, null=True, db_index=True)
     source = models.CharField(max_length=32, choices=SOURCE_CHOICES, default=SOURCE_TRIAL)
 
     payment = models.ForeignKey("payments.Payment", on_delete=models.SET_NULL, null=True, blank=True)
@@ -51,7 +51,7 @@ class Subscription(models.Model):
       None
 
     RETURNS:
-      bool - True if expires_at is missing or <= now - Never None
+      bool - True if inactive, expires_at missing, or expires_at <= now - Never None
 
     RAISES:
       None
@@ -60,6 +60,8 @@ class Subscription(models.Model):
       - Safe when expires_at is None
     """
     def is_expired(self) -> bool:
+        if not self.is_active:
+            return True
         if not self.expires_at:
             return True
         return timezone.now() >= self.expires_at

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from .base import *
+from .base import _env
 
 """
 GOAL: Configure staging environment settings with debug disabled and production-like configuration.

@@ -53,11 +53,14 @@ class CargoTechAuthService:
         if not phone or not password:
             raise ValidationError("CargoTech credentials are required")
 
-        response = requests.post(
-            f"{cls.BASE_URL}/v1/auth/login",
-            json={"phone": phone, "password": password, "remember": remember},
-            timeout=10,
-        )
+        try:
+            response = requests.post(
+                f"{cls.BASE_URL}/v1/auth/login",
+                json={"phone": phone, "password": password, "remember": remember},
+                timeout=10,
+            )
+        except requests.RequestException as exc:
+            raise CargoTechAuthError(f"CargoTech login request failed: {exc}") from exc
         try:
             response.raise_for_status()
         except requests.HTTPError as exc:
