@@ -6,6 +6,7 @@ from typing import Any
 
 from django.contrib.auth import get_user_model
 from django.conf import settings
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.http import JsonResponse
 
 from apps.auth.models import DriverProfile
@@ -162,6 +163,15 @@ def telegram_auth(request):
 
     try:
         tg = TelegramAuthService.validate_init_data(init_data, max_age_seconds=300)
+    except DjangoValidationError as exc:
+        logger.warning("Telegram auth failed: %s", exc)
+
+        if getattr(settings, "DEBUG", False):
+            messages = getattr(exc, "messages", None)
+            reason = "; ".join(str(m) for m in (messages or [])) or str(exc)
+            return _json_response({"error": reason}, status=400)
+
+        return _json_response({"error": "invalid_init_data"}, status=400)
     except Exception:
         logger.exception("Telegram auth failed: validate_init_data exception")
         return _json_response({"error": "invalid_init_data"}, status=400)

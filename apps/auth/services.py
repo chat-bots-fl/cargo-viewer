@@ -112,8 +112,8 @@ class TelegramAuthService:
 
         if hash_value and not skip_hash_validation:
             data_check_string = "\n".join(f"{k}={v}" for k, v in sorted(data.items()))
-            secret = hashlib.sha256(bot_token.encode("utf-8")).digest()
-            calculated_hash = hmac.new(secret, data_check_string.encode("utf-8"), hashlib.sha256).hexdigest()
+            secret_key = hmac.new(b"WebAppData", bot_token.encode("utf-8"), hashlib.sha256).digest()
+            calculated_hash = hmac.new(secret_key, data_check_string.encode("utf-8"), hashlib.sha256).hexdigest()
 
             if not hmac.compare_digest(calculated_hash, hash_value):
                 _record_auth_failure("invalid_hash")

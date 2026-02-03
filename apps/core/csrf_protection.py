@@ -65,6 +65,7 @@ GUARANTEES:
   - Returns (False, reason) if origin is invalid
   - Checks Origin header first, then Referer as fallback
   - Handles missing headers gracefully
+  - Supports reverse proxies via X-Forwarded-Proto / X-Forwarded-Host for same-origin validation
 """
 def validate_origin(
     request: HttpRequest,
@@ -100,17 +101,31 @@ def validate_origin(
         # Get the host from the request
         request_host = request.get_host()
         request_scheme = request.scheme
-        
-        # Build the expected origin for same-origin requests
-        same_origin = f"{request_scheme}://{request_host}"
-        
-        # Check if request_origin matches same_origin
-        if request_origin == same_origin:
-            return True, ""
-        
-        # Also check without port (some browsers omit default ports)
-        same_origin_no_port = f"{request_scheme}://{request_host.split(':')[0]}"
-        if request_origin == same_origin_no_port:
+
+        forwarded_proto = request.META.get("HTTP_X_FORWARDED_PROTO", "").split(",")[0].strip().lower()
+        forwarded_host = request.META.get("HTTP_X_FORWARDED_HOST", "").split(",")[0].strip()
+
+        candidates: set[str] = set()
+
+        def _strip_port(host: str) -> str:
+            if host.startswith("[") and "]" in host:
+                return host.split("]")[0] + "]"
+            if ":" in host:
+                return host.split(":", 1)[0]
+            return host
+
+        def _add_candidate(scheme: str, host: str) -> None:
+            if not scheme or not host:
+                return
+            candidates.add(f"{scheme}://{host}")
+            candidates.add(f"{scheme}://{_strip_port(host)}")
+
+        _add_candidate(request_scheme, request_host)
+        _add_candidate(forwarded_proto, request_host)
+        _add_candidate(request_scheme, forwarded_host)
+        _add_candidate(forwarded_proto, forwarded_host)
+
+        if request_origin in candidates:
             return True, ""
     
     # Check against allowed origins list

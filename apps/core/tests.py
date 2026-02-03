@@ -1059,6 +1059,24 @@ class TestValidateOrigin:
         assert is_allowed is True
         assert reason == ""
 
+    def test_validate_origin_forwarded_proto_and_host_allowed(self, rf):
+        """
+        GOAL: Verify origin validation allows same-origin requests behind a reverse proxy.
+
+        GUARANTEES:
+          - Returns (True, "") when Origin matches X-Forwarded-Proto + X-Forwarded-Host
+        """
+        from apps.core.csrf_protection import validate_origin
+
+        request = rf.post("/test/")
+        request.META["HTTP_ORIGIN"] = "https://example.ngrok-free.dev"
+        request.META["HTTP_X_FORWARDED_PROTO"] = "https"
+        request.META["HTTP_X_FORWARDED_HOST"] = "example.ngrok-free.dev"
+
+        is_allowed, reason = validate_origin(request, [], allow_same_origin=True)
+        assert is_allowed is True
+        assert reason == ""
+
     def test_validate_origin_allowed_origin(self, rf):
         """
         GOAL: Verify origin validation allows configured origins.

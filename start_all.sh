@@ -177,7 +177,24 @@ sleep 5
 
 # 2. Получение URL ngrok
 echo -e "${CYAN}[3/5] Получение URL ngrok...${NC}"
-NGROK_URL=$(curl -s http://127.0.0.1:4040/api/tunnels | grep -o '"public_url":"https://[^"]*"' | cut -d'"' -f4)
+NGROK_STARTUP_TIMEOUT_SECONDS=${NGROK_STARTUP_TIMEOUT_SECONDS:-60}
+NGROK_API_URL=${NGROK_API_URL:-http://127.0.0.1:4040/api/tunnels}
+
+NGROK_URL=""
+for ((i=1; i<=NGROK_STARTUP_TIMEOUT_SECONDS; i++)); do
+    NGROK_URL=$(curl -s "$NGROK_API_URL" 2>/dev/null | grep -o '"public_url":"https://[^"]*"' | head -n1 | cut -d'"' -f4)
+    if [ -n "$NGROK_URL" ]; then
+        break
+    fi
+    if ! kill -0 "$NGROK_PID" > /dev/null 2>&1; then
+        echo -e "${RED}[ERROR] ngrok process exited during startup (PID: $NGROK_PID).${NC}"
+        exit 1
+    fi
+    if (( i % 5 == 0 )); then
+        echo -e "${YELLOW}[INFO] ngrok still starting... (${i}s/${NGROK_STARTUP_TIMEOUT_SECONDS}s)${NC}"
+    fi
+    sleep 1
+done
 
 if [ -z "$NGROK_URL" ]; then
     echo -e "${YELLOW}[WARNING] Не удалось автоматически получить URL ngrok${NC}"

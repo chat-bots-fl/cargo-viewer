@@ -38,8 +38,8 @@ def _make_init_data(*, bot_token: str, auth_date: int, user: dict) -> str:
     """
     data = {"auth_date": str(auth_date), "query_id": "AAHtest", "user": json.dumps(user, separators=(",", ":"))}
     data_check_string = "\n".join(f"{k}={v}" for k, v in sorted(data.items()))
-    secret = hashlib.sha256(bot_token.encode("utf-8")).digest()
-    hash_value = hmac.new(secret, data_check_string.encode("utf-8"), hashlib.sha256).hexdigest()
+    secret_key = hmac.new(b"WebAppData", bot_token.encode("utf-8"), hashlib.sha256).digest()
+    hash_value = hmac.new(secret_key, data_check_string.encode("utf-8"), hashlib.sha256).hexdigest()
     data["hash"] = hash_value
     return urlencode(data)
 
